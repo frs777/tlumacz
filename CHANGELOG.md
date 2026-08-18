@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-19
+
+### Added
+- Managed local `llama-server` process: the GUI can start its own server in the background on a dedicated port and stop it when the app exits
+- New `tlumacz/server.py` module (`LlamaServer`, `ServerConfig`) free of Qt dependencies
+- Config fields: `server_port` (default 18080), `server_gguf_path`, `auto_start_server`
+- Signal handlers (SIGTERM/SIGINT) plus `atexit` cleanup so the managed server is stopped even on termination
+
+### Fixed
+- `_collect_settings` in the main window no longer drops the server config fields when saving settings on window close
+- Output path now defaults to the current input file with a language suffix (`name_pl.ext`, `name_en.ext`, ...) every time a new input file is chosen, instead of keeping the path from the last translation
+- Language change updates the default output path suffix accordingly
+
 ## [0.5.0] - 2026-08-18
 
 ### Added

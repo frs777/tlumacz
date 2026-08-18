@@ -2,7 +2,7 @@
 # NOTE: Replace url/source with the real repository URL before submitting to AUR.
 
 pkgname=tlumacz
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')

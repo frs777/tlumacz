@@ -39,6 +39,12 @@ from ..core import TranslatorConfig
 from .config import AppSettings, load_settings, save_settings
 from .worker import TranslationThread
 
+try:  # optional; only used when the managed server is running
+    from ..server import LlamaServer, ServerConfig
+except ImportError:  # pragma: no cover
+    LlamaServer = None  # type: ignore[assignment,misc]
+    ServerConfig = None  # type: ignore[assignment,misc]
+
 SUPPORTED_LANGUAGES = [
     "Polish",
     "English",
@@ -52,16 +58,30 @@ SUPPORTED_LANGUAGES = [
     "Russian",
 ]
 
+LANGUAGE_SUFFIXES = {
+    "Polish": "pl",
+    "English": "en",
+    "German": "de",
+    "French": "fr",
+    "Spanish": "es",
+    "Italian": "it",
+    "Ukrainian": "uk",
+    "Czech": "cs",
+    "Dutch": "nl",
+    "Russian": "ru",
+}
+
 
 class MainWindow(QMainWindow):
     """Top-level application window."""
 
-    def __init__(self) -> None:
+    def __init__(self, server: object | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Tłumacz")
         self.resize(900, 720)
 
         self._settings = load_settings()
+        self._server = server
         self._thread: TranslationThread | None = None
 
         self._build_ui()
@@ -168,6 +188,7 @@ class MainWindow(QMainWindow):
         self.language = QComboBox()
         self.language.setObjectName("language")
         self.language.addItems(SUPPORTED_LANGUAGES)
+        self.language.currentTextChanged.connect(self._on_language_changed)
 
         form.addRow("Base URL:", self.base_url)
         form.addRow("API key:", self.api_key)
@@ -200,11 +221,18 @@ class MainWindow(QMainWindow):
             last_input=self.input_path.text().strip(),
             last_output=self.output_path.text().strip(),
         )
+        settings.server_port = self._settings.server_port
+        settings.server_gguf_path = self._settings.server_gguf_path
+        settings.auto_start_server = self._settings.auto_start_server
         return settings
 
     def _load_settings_into_ui(self) -> None:
         s = self._settings
         self.base_url.setText(s.base_url)
+        if self._server is not None:
+            server_url = self._server.config.base_url
+            self.base_url.setText(server_url)
+            self._append_log(f"Własny serwer uruchomiony: {server_url}")
         self.api_key.setText(s.api_key)
         self.model.setText(s.model)
         self.chunk_size.setValue(s.chunk_size)
@@ -236,8 +264,9 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.input_path.setText(path)
-            if not self.output_path.text().strip():
-                self.output_path.setText(_default_output_path(path))
+            self.output_path.setText(
+                _default_output_path(path, self.language.currentText())
+            )
 
     def _on_browse_output(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -245,6 +274,13 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.output_path.setText(path)
+
+    def _on_language_changed(self, _language: str) -> None:
+        input_path = self.input_path.text().strip()
+        if input_path and not self.output_path.text().strip():
+            self.output_path.setText(
+                _default_output_path(input_path, _language)
+            )
 
     def _on_translate(self) -> None:
         input_path = self.input_path.text().strip()
@@ -257,7 +293,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Brak pliku", f"Plik nie istnieje:\n{input_path}")
             return
         if not output_path:
-            output_path = _default_output_path(input_path)
+            output_path = _default_output_path(
+                input_path, self.language.currentText()
+            )
             self.output_path.setText(output_path)
 
         config = self._build_config()
@@ -311,7 +349,11 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
-def _default_output_path(input_path: str) -> str:
-    """Return ``name_pl.ext`` next to the input file."""
+def _default_output_path(input_path: str, language: str) -> str:
+    """Return ``name_<suffix>.ext`` next to the input file.
+
+    The suffix follows the selected target language (``pl``, ``en``, ...).
+    """
+    suffix = LANGUAGE_SUFFIXES.get(language, "pl")
     path = Path(input_path)
-    return str(path.with_name(f"{path.stem}_pl{path.suffix}"))
+    return str(path.with_name(f"{path.stem}_{suffix}{path.suffix}"))

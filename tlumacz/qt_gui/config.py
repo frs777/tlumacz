@@ -32,6 +32,9 @@ class AppSettings:
     chunk_size: int = 4000
     temperature: float = 0.1
     target_language: str = "Polish"
+    server_port: int = 18080
+    server_gguf_path: str = ""
+    auto_start_server: bool = False
     last_input: str = ""
     last_output: str = ""
 
