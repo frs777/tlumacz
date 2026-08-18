@@ -26,13 +26,12 @@ export class FileReaderTool implements Tool<FileReaderInput> {
 
   async* call(
     input: FileReaderInput,
-    context: { abortController: AbortController; options: { isNonInteractiveSession: boolean } }
+    _context: { abortController: AbortController; options: { isNonInteractiveSession: boolean } }
   ): AsyncGenerator<ToolResult, void, unknown> {
     try {
       const { filePath } = input;
       const ext = extname(filePath).toLowerCase();
       
-      // Check if it's a supported text file
       const supportedExtensions = ['.md', '.txt', '.html', '.htm', '.json', '.js', '.ts', '.css', '.xml', '.csv'];
       if (!supportedExtensions.includes(ext)) {
         throw new Error(`Unsupported file type: ${ext}. Supported types: ${supportedExtensions.join(', ')}`);
@@ -41,15 +40,24 @@ export class FileReaderTool implements Tool<FileReaderInput> {
       const content = await readFile(filePath, 'utf-8');
       const filename = filePath.split('/').pop() || filePath;
 
-      const result: FileReaderResult = {
-        filename,
-        content
-      };
+      // Chunk the content to avoid context window issues
+      const CHUNK_SIZE = 3000;
+      const chunks: string[] = [];
+      for (let i = 0; i < content.length; i += CHUNK_SIZE) {
+        chunks.push(content.substring(i, i + CHUNK_SIZE));
+      }
 
-      yield {
-        type: 'file_read',
-        data: result
-      };
+      for (let i = 0; i < chunks.length; i++) {
+        const result: FileReaderResult = {
+          filename: `${filename} (part ${i + 1}/${chunks.length})`,
+          content: chunks[i]
+        };
+
+        yield {
+          type: 'file_read',
+          data: result
+        };
+      }
     } catch (error) {
       yield {
         type: 'error',

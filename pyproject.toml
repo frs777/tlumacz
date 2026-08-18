@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-translator"
+version = "0.5.0"
+description = "AI-powered document translator with a Qt GUI"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Agent Translator Team"},
+]
+keywords = ["translator", "ai", "openai", "qt", "polish"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "openai>=1.0",
+    "PySide6>=6.5",
+]
+
+[project.scripts]
+agent-translator = "agent_translator.qt_gui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/protonpass/agent-translator"
+Repository = "https://github.com/protonpass/agent-translator"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_translator*"]
+
+[tool.setuptools.package-data]
+"agent_translator.qt_gui.resources" = ["*.qss", "*.svg"]

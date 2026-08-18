@@ -8,3 +8,12 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.aider*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist-venv/
+.venv/

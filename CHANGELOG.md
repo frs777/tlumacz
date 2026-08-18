@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-18
+
+### Added
+- Qt GUI (PySide6 / Qt Widgets) for translating files to Polish via an OpenAI-compatible API
+- Main window with input/output file selection and API settings (base URL, key, model, chunk size, temperature, target language)
+- Background translation on a QThread worker (non-blocking UI) with cancel support
+- Progress bar, live log view, and translated-output preview
+- Persistent per-user settings in `~/.config/agent-translator/config.json`
+- QSS dark theme and bundled SVG icon (package resources)
+- Python package structure (`agent_translator/`) with `pyproject.toml`, entry point `agent-translator`, `requirements.txt`, `PKGBUILD` (AUR-ready) and `.desktop` file
+
+### Changed
+- Extracted translation logic from standalone Python scripts into reusable `agent_translator/core.py`
+- Configuration is now data-driven (`TranslatorConfig`) instead of hard-coded in scripts
+- Chunk splitting respects line boundaries instead of arbitrary character slices
+
+### Technical Details
+- Worker follows the safe `QObject` + `moveToThread` pattern with explicit `quit()`/`wait()` lifecycle
+- Core module is free of Qt/CLI dependencies so it can be reused by GUI, CLI, or tests
+- `importlib.resources` loads the bundled QSS so styling works after global installation
+
 ## [0.4.0] - 2025-06-20
 
 ### Added

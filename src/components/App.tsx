@@ -42,12 +42,12 @@ export const App: React.FC = () => {
       try {
         // Convert messages to ChatMessage format
         const chatMessages: ChatMessage[] = [...messages, userMessage].map(msg => ({
-          role: msg.role,
+          role: msg.role as 'user' | 'assistant' | 'tool',
           content: msg.text,
         }));
         
         const callbacks: ToolCallbacks = {
-          onToolCall: (toolName: string, args: any) => {
+          onToolCall: (toolName: string) => {
             setToolStatus(`Calling ${toolName} tool...`);
           },
           onToolResult: (toolName: string, result: any) => {

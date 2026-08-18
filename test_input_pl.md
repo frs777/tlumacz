@@ -1,0 +1,1 @@
+Cześć, to jest test dla agenta tłumacza.

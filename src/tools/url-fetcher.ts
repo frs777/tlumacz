@@ -20,7 +20,7 @@ export class UrlFetcherTool implements Tool<UrlFetcherInput> {
     url: z.string().url().describe("The HTTP(S) URL to fetch content from")
   });
 
-  private turndownService: TurndownService;
+  private turndownService: any;
 
   constructor() {
     this.turndownService = new TurndownService({
