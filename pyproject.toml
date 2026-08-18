@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-translator"
+name = "tlumacz"
 version = "0.5.0"
 description = "AI-powered document translator with a Qt GUI"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Agent Translator Team"},
+    {name = "Tlumacz Team"},
 ]
 keywords = ["translator", "ai", "openai", "qt", "polish"]
 classifiers = [
@@ -31,15 +31,15 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-translator = "agent_translator.qt_gui.app:main"
+tlumacz = "tlumacz.qt_gui.app:main"
 
 [project.urls]
-Homepage = "https://github.com/protonpass/agent-translator"
-Repository = "https://github.com/protonpass/agent-translator"
+Homepage = "https://github.com/protonpass/tlumacz"
+Repository = "https://github.com/protonpass/tlumacz"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_translator*"]
+include = ["tlumacz*"]
 
 [tool.setuptools.package-data]
-"agent_translator.qt_gui.resources" = ["*.qss", "*.svg"]
+"tlumacz.qt_gui.resources" = ["*.qss", "*.svg"]

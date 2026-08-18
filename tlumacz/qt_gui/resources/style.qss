@@ -1,4 +1,4 @@
-/* Agent Translator — global QSS stylesheet */
+/* Tłumacz — global QSS stylesheet */
 
 QMainWindow, QDialog {
     background-color: #1e1e2e;

@@ -1,8 +1,8 @@
 [Desktop Entry]
-Name=Agent Translator
+Name=Tlumacz
 Comment=AI-powered document translator
-Exec=agent-translator
-Icon=agent-translator
+Exec=tlumacz
+Icon=tlumacz
 Type=Application
 Categories=Office;Utility;TextTools;
 Keywords=translate;translation;ai;polish;

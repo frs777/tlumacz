@@ -1,17 +1,18 @@
-# Maintainer: Agent Translator Team <team@example.com>
+# Maintainer: Tlumacz Team <team@example.com>
 # NOTE: Replace url/source with the real repository URL before submitting to AUR.
 
-pkgname=agent-translator
+pkgname=tlumacz
 pkgver=0.5.0
 pkgrel=1
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')
-url="https://github.com/protonpass/agent-translator"
+url="https://github.com/protonpass/tlumacz"
 license=('MIT')
 depends=(
     'python'
     'pyside6'
     'python-openai'
+    'hicolor-icon-theme'
 )
 makedepends=(
     'python-build'
@@ -33,7 +34,7 @@ package() {
     python -m installer --destdir="$pkgdir" dist/*.whl
 
     install -Dm644 LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-    install -Dm644 agent-translator.desktop "$pkgdir/usr/share/applications/agent-translator.desktop"
-    install -Dm644 agent_translator/qt_gui/resources/agent-translator.svg \
-        "$pkgdir/usr/share/icons/hicolor/scalable/apps/agent-translator.svg"
+    install -Dm644 tlumacz.desktop "$pkgdir/usr/share/applications/tlumacz.desktop"
+    install -Dm644 tlumacz/qt_gui/resources/tlumacz.svg \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/tlumacz.svg"
 }

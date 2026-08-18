@@ -12,12 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Main window with input/output file selection and API settings (base URL, key, model, chunk size, temperature, target language)
 - Background translation on a QThread worker (non-blocking UI) with cancel support
 - Progress bar, live log view, and translated-output preview
-- Persistent per-user settings in `~/.config/agent-translator/config.json`
+- Persistent per-user settings in `~/.config/tlumacz/config.json`
 - QSS dark theme and bundled SVG icon (package resources)
-- Python package structure (`agent_translator/`) with `pyproject.toml`, entry point `agent-translator`, `requirements.txt`, `PKGBUILD` (AUR-ready) and `.desktop` file
+- Python package structure (`tlumacz/`) with `pyproject.toml`, entry point `tlumacz`, `requirements.txt`, `PKGBUILD` (AUR-ready) and `.desktop` file
 
 ### Changed
-- Extracted translation logic from standalone Python scripts into reusable `agent_translator/core.py`
+- Extracted translation logic from standalone Python scripts into reusable `tlumacz/core.py`
 - Configuration is now data-driven (`TranslatorConfig`) instead of hard-coded in scripts
 - Chunk splitting respects line boundaries instead of arbitrary character slices
 

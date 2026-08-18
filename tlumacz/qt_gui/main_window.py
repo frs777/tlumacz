@@ -1,4 +1,4 @@
-"""Main window for the Agent Translator GUI.
+"""Main window for the Tłumacz GUI.
 
 Layout (top to bottom):
 1. Input/output file selection
@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Agent Translator")
+        self.setWindowTitle("Tłumacz")
         self.resize(900, 720)
 
         self._settings = load_settings()

@@ -1,9 +1,9 @@
-"""Application entry point for the Agent Translator Qt GUI.
+"""Application entry point for the Tłumacz Qt GUI.
 
 Run with::
 
-    python -m agent_translator.qt_gui.app
-    agent-translator
+    python -m tlumacz.qt_gui.app
+    tlumacz
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from .main_window import MainWindow
 def _load_stylesheet(app: QApplication) -> None:
     """Load the bundled QSS stylesheet from package resources."""
     try:
-        qss = resources.files("agent_translator.qt_gui.resources").joinpath("style.qss")
+        qss = resources.files("tlumacz.qt_gui.resources").joinpath("style.qss")
         with qss.open("r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
     except (OSError, ModuleNotFoundError):
@@ -29,9 +29,9 @@ def _load_stylesheet(app: QApplication) -> None:
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Agent Translator")
-    app.setApplicationDisplayName("Agent Translator")
-    app.setDesktopFileName("agent-translator")
+    app.setApplicationName("Tłumacz")
+    app.setApplicationDisplayName("Tłumacz")
+    app.setDesktopFileName("tlumacz")
 
     _load_stylesheet(app)
 

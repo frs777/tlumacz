@@ -1,4 +1,4 @@
-"""Core translation logic for Agent Translator.
+"""Core translation logic for Tłumacz.
 
 This module is intentionally free of Qt/CLI dependencies so it can be reused
 by the GUI, future CLI versions, and installed globally as a Python package.

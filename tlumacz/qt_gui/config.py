@@ -1,6 +1,6 @@
-"""Persistent configuration for the Agent Translator GUI.
+"""Persistent configuration for the Tłumacz GUI.
 
-Settings are stored as JSON in ``~/.config/agent-translator/config.json`` so
+Settings are stored as JSON in ``~/.config/tlumacz/config.json`` so
 the application works when installed globally (AUR) and per-user.
 """
 
@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-APP_NAME = "agent-translator"
+APP_NAME = "tlumacz"
 
 
 def config_dir() -> Path:

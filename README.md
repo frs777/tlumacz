@@ -17,7 +17,7 @@ Current version: **0.5.0**
 - ⏹️ **Cancel** running translation at any time
 - 📊 **Progress bar** and live log view
 - 👁️ **Preview** of the translated output
-- 💾 **Persistent settings** in `~/.config/agent-translator/config.json`
+- 💾 **Persistent settings** in `~/.config/tlumacz/config.json`
 - 🎨 **Dark QSS theme** with bundled SVG icon
 
 ## Requirements
@@ -31,7 +31,7 @@ Current version: **0.5.0**
 
 ```bash
 pip install -e .
-agent-translator
+tlumacz
 ```
 
 ### Build a wheel
@@ -49,12 +49,12 @@ makepkg -si
 ```
 
 Dependencies are resolved from official repos (`pyside6`) and AUR (`python-openai`).
-After install, launch the app globally with `agent-translator` or from your
+After install, launch the app globally with `tlumacz` or from your
 application menu.
 
 ## Usage
 
-1. Run `agent-translator`
+1. Run `tlumacz`
 2. Choose the **input file** to translate
 3. Choose the **output file** (defaults to `name_pl.ext`)
 4. Adjust **API settings** if needed (default: `http://127.0.0.1:8080/v1`, model `qwen2.5-coder-7b-instruct-q5_k_m`)
@@ -72,16 +72,16 @@ The app speaks the OpenAI Chat Completions protocol, so it works with:
 
 ```bash
 # Run tests / sanity checks
-python -c "from agent_translator.qt_gui.app import main; print('OK')"
+python -c "from tlumacz.qt_gui.app import main; print('OK')"
 
 # Run the GUI without a display (headless check)
-QT_QPA_PLATFORM=offscreen python -m agent_translator.qt_gui.app
+QT_QPA_PLATFORM=offscreen python -m tlumacz.qt_gui.app
 ```
 
 ## Project structure
 
 ```
-agent_translator/
+tlumacz/
 ├── core.py                # Reusable translation logic (no Qt deps)
 └── qt_gui/
     ├── app.py             # Entry point (main())
