@@ -63,3 +63,19 @@ def test_config_warning_dialog(qapp, config_home, monkeypatch):
     window = MainWindow(server=None)
     assert shown, "warning dialog should be shown for a broken config"
     window.close()
+
+
+def test_tabs_and_help(qapp):
+    from tlumacz.qt_gui.main_window import MainWindow
+
+    window = MainWindow(server=None)
+    tabs = window.tabs
+    labels = [tabs.tabText(i) for i in range(tabs.count())]
+    assert labels == ["Tłumaczenie", "Ustawienia", "Pomoc"]
+
+    window.help_language.setCurrentIndex(1)  # English
+    en_html = window.help_view.toHtml()
+    assert "Settings tab" in en_html
+    window.help_language.setCurrentIndex(0)  # Polish
+    assert "Ustawienia" in window.help_view.toHtml()
+    window.close()

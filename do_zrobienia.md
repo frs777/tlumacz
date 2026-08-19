@@ -30,10 +30,10 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
 
 ## Dokumentacja / pomoc
 
-- [ ] **Krótka pomoc w GUI (PL + EN)** — okno pomocy opisujące: format i pola
-      `config.json`, jak wybrać LLM (base_url, api_key, model), formaty
-      obsługiwanych plików wejściowych (Markdown, TXT) oraz regułę nazwy pliku
-      wyjściowego (`nazwa_pl.ext`). Przełączanie języka pomocy PL/EN.
+- [x] **Krótka pomoc w GUI (PL + EN)** — zakładka „Pomoc” opisująca: format
+      i pola `config.json`, jak wybrać LLM (base_url, api_key, model), formaty
+      obsługiwanych plików wejściowych (Markdown, TXT, HTML), serwer lokalny
+      oraz regułę nazwy pliku wyjściowego. Przełączanie języka pomocy PL/EN.
 
 ## Tłumaczenie
 

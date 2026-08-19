@@ -1,12 +1,9 @@
 """Main window for the Tłumacz GUI.
 
-Layout (top to bottom):
-1. Input/output file selection
-2. API settings (base URL, key, model, chunk size, temperature, language)
-3. Translate / Cancel buttons
-4. Progress bar + status
-5. Log output
-6. Translated output preview
+Tabs (top to bottom):
+1. Tłumaczenie — input/output files, translate/cancel, progress, log, preview
+2. Ustawienia — API settings, local server, glossary, skills
+3. Pomoc — short help in Polish and English
 """
 
 from __future__ import annotations
@@ -34,6 +31,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QTabWidget,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -113,12 +112,16 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = QWidget(self)
         root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
 
-        root.addWidget(self._build_files_group())
-        root.addWidget(self._build_glossary_group())
-        root.addWidget(self._build_skills_group())
-        root.addWidget(self._build_settings_group())
-        root.addWidget(self._build_server_group())
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("mainTabs")
+        root.addWidget(self.tabs)
+
+        # --- Tab: Tłumaczenie ------------------------------------------------
+        translation_tab = QWidget()
+        t_layout = QVBoxLayout(translation_tab)
+        t_layout.addWidget(self._build_files_group())
 
         controls = QHBoxLayout()
         self.translate_btn = QPushButton("Tłumacz")
@@ -130,13 +133,13 @@ class MainWindow(QMainWindow):
         controls.addWidget(self.translate_btn)
         controls.addWidget(self.cancel_btn)
         controls.addStretch(1)
-        root.addLayout(controls)
+        t_layout.addLayout(controls)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("progressBar")
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        root.addWidget(self.progress_bar)
+        t_layout.addWidget(self.progress_bar)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setObjectName("outputSplitter")
@@ -159,7 +162,21 @@ class MainWindow(QMainWindow):
         splitter.addWidget(preview_box)
 
         splitter.setSizes([300, 300])
-        root.addWidget(splitter, 1)
+        t_layout.addWidget(splitter, 1)
+        self.tabs.addTab(translation_tab, "Tłumaczenie")
+
+        # --- Tab: Ustawienia --------------------------------------------------
+        settings_tab = QWidget()
+        s_layout = QVBoxLayout(settings_tab)
+        s_layout.addWidget(self._build_settings_group())
+        s_layout.addWidget(self._build_server_group())
+        s_layout.addWidget(self._build_glossary_group())
+        s_layout.addWidget(self._build_skills_group())
+        s_layout.addStretch(1)
+        self.tabs.addTab(settings_tab, "Ustawienia")
+
+        # --- Tab: Pomoc --------------------------------------------------------
+        self.tabs.addTab(self._build_help_tab(), "Pomoc")
 
         self.setCentralWidget(central)
 
@@ -240,6 +257,148 @@ class MainWindow(QMainWindow):
             self._skill_checkboxes.append(checkbox)
             layout.addWidget(checkbox)
         return box
+
+    def _build_help_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        language_row = QHBoxLayout()
+        language_row.addWidget(QLabel("Język / Language:"))
+        self.help_language = QComboBox()
+        self.help_language.setObjectName("helpLanguage")
+        self.help_language.addItem("Polski", "pl")
+        self.help_language.addItem("English", "en")
+        self.help_language.currentIndexChanged.connect(self._update_help)
+        language_row.addWidget(self.help_language)
+        language_row.addStretch(1)
+        layout.addLayout(language_row)
+
+        self.help_view = QTextBrowser()
+        self.help_view.setObjectName("helpView")
+        self.help_view.setOpenExternalLinks(True)
+        layout.addWidget(self.help_view, 1)
+
+        self._update_help()
+        return tab
+
+    def _update_help(self) -> None:
+        if self.help_language.currentData() == "en":
+            content = self._help_text_en()
+        else:
+            content = self._help_text_pl()
+        self.help_view.setHtml(content)
+
+    def _help_text_pl(self) -> str:
+        return """
+<h2>Tłumacz — pomoc</h2>
+<p>Tłumacz to narzędzie do tłumaczenia dokumentów (Markdown, TXT, HTML)
+za pomocą modeli LLM zgodnych z API OpenAI.</p>
+
+<h3>1. Konfiguracja modelu (zakładka „Ustawienia”)</h3>
+<ul>
+<li><b>Base URL</b> — adres serwera zgodnego z API OpenAI,
+np. <code>http://127.0.0.1:8080/v1</code> dla lokalnego llama.cpp/ollama.</li>
+<li><b>API key</b> — token uwierzytelniający wysyłany jako
+<code>Authorization: Bearer</code>. Lokalne serwery zwykle go ignorują
+(domyślny placeholder <code>ollama</code>); przy zdalnych usługach wpisz
+tu swój klucz.</li>
+<li><b>Model</b> — nazwa modelu dostępna na serwerze.</li>
+<li><b>Rozmiar chunka</b> — wielkość fragmentu tekstu wysyłanego do modelu.</li>
+<li><b>Temperatura</b> — stopień losowości odpowiedzi (niżej = bardziej
+deterministycznie).</li>
+<li><b>Język docelowy</b> — język, na który ma być tłumaczony tekst.</li>
+<li><b>Własny prompt</b> — opcjonalny prompt zastępujący domyślny
+(styl, terminologia, ton); glosariusz i skille są dodawane niezależnie.</li>
+</ul>
+
+<h3>2. Serwer lokalny</h3>
+<p>Program może sam uruchomić serwer llama.cpp: wskaż plik <code>.gguf</code>
+i port, a następnie zaznacz „Uruchamiaj serwer razem z programem”.
+Jeśli używasz własnego serwera, zostaw pole GGUF puste.</p>
+
+<h3>3. Glosariusz</h3>
+<p>Plik CSV dwukolumnowy <code>źródło,tłumaczenie</code>. Wpisy wymuszają
+stałe tłumaczenia dla wybranych terminów. Nagłówek (<code>source,target</code>
+lub <code>Pattern,Substitution</code>) oraz prefiks <code>#</code>
+w tłumaczeniu są obsługiwane automatycznie. Wpisy można dodawać też
+przyciskiem „Dodaj wpis”.</p>
+
+<h3>4. Skille</h3>
+<p>Instrukcje dla modelu dopasowane do formatu pliku (Markdown, TXT, HTML).
+Włącz skille, których używasz — instrukcje pasującego skilla zostaną
+wstrzyknięte do promptu podczas tłumaczenia.</p>
+
+<h3>5. Motyw</h3>
+<p>Motyw „Systemowy” podąża za kolorem pulpitu; możesz też wymusić
+jasny lub ciemny.</p>
+
+<h3>6. Plik konfiguracji</h3>
+<p>Ustawienia są zapisywane w
+<code>~/.config/tlumacz/config.json</code>. Pola: <code>base_url</code>,
+<code>api_key</code>, <code>model</code>, <code>chunk_size</code>,
+<code>temperature</code>, <code>target_language</code>, <code>theme</code>,
+<code>glossary_path</code>, <code>system_prompt</code>,
+<code>enabled_skills</code>, <code>server_port</code>,
+<code>server_gguf_path</code>, <code>auto_start_server</code>,
+<code>last_input</code>, <code>last_output</code>.</p>
+<p>Uszkodzony plik lub pola o błędnym typie są naprawiane wartościami
+domyślnymi, a program pokazuje stosowny komunikat.</p>
+"""
+
+    def _help_text_en(self) -> str:
+        return """
+<h2>Tłumacz — help</h2>
+<p>Tłumacz is a tool for translating documents (Markdown, TXT, HTML)
+using LLM models that speak the OpenAI-compatible API.</p>
+
+<h3>1. Model setup (Settings tab)</h3>
+<ul>
+<li><b>Base URL</b> — address of an OpenAI-compatible server,
+e.g. <code>http://127.0.0.1:8080/v1</code> for local llama.cpp/ollama.</li>
+<li><b>API key</b> — authentication token sent as
+<code>Authorization: Bearer</code>. Local servers usually ignore it
+(the default <code>ollama</code> placeholder); for remote services put
+your real key here.</li>
+<li><b>Model</b> — the model name available on the server.</li>
+<li><b>Chunk size</b> — how large a piece of text is sent to the model.</li>
+<li><b>Temperature</b> — response randomness (lower = more deterministic).</li>
+<li><b>Target language</b> — the language to translate into.</li>
+<li><b>Custom prompt</b> — optional prompt replacing the default one
+(style, terminology, tone); glossary and skills are appended on top.</li>
+</ul>
+
+<h3>2. Local server</h3>
+<p>The app can start a llama.cpp server itself: pick a <code>.gguf</code>
+file and a port, then tick “start the server with the app”.
+Leave the GGUF field empty when using your own server.</p>
+
+<h3>3. Glossary</h3>
+<p>A two-column CSV file <code>source,translation</code>. Entries enforce
+fixed translations for chosen terms. A header row
+(<code>source,target</code> or <code>Pattern,Substitution</code>) and a
+<code>#</code> prefix in the translation are handled automatically.
+Entries can also be added with the “Add entry” button.</p>
+
+<h3>4. Skills</h3>
+<p>Model instructions matched to the file format (Markdown, TXT, HTML).
+Enable the skills you use — the instructions of a matching skill are
+injected into the prompt during translation.</p>
+
+<h3>5. Theme</h3>
+<p>“System” follows the desktop color scheme; you can force light or dark.</p>
+
+<h3>6. Configuration file</h3>
+<p>Settings are stored in <code>~/.config/tlumacz/config.json</code>.
+Fields: <code>base_url</code>, <code>api_key</code>, <code>model</code>,
+<code>chunk_size</code>, <code>temperature</code>,
+<code>target_language</code>, <code>theme</code>, <code>glossary_path</code>,
+<code>system_prompt</code>, <code>enabled_skills</code>,
+<code>server_port</code>, <code>server_gguf_path</code>,
+<code>auto_start_server</code>, <code>last_input</code>,
+<code>last_output</code>.</p>
+<p>A corrupt file or wrong-typed fields are repaired with defaults and the
+app shows a message about it.</p>
+"""
 
     def _build_settings_group(self) -> QGroupBox:
         box = QGroupBox("Ustawienia API")

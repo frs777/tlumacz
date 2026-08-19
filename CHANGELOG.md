@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-08-19
+
+### Changed
+- Main window split into tabs to reduce clutter on the translation screen:
+  - **Tłumaczenie** — input/output files, translate/cancel, progress, log, preview
+  - **Ustawienia** — API settings, local server, glossary, skills
+  - **Pomoc** — built-in help (Polish/English) covering LLM setup, local
+    server, glossary, skills, theme and `config.json` fields
+
+### Added
+- Help tab with a language selector (PL/EN) rendering short usage docs
+
 ## [0.11.0] - 2026-08-19
 
 ### Added
