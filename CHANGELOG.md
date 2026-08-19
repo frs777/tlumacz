@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-08-19
+
+### Added
+- "Odśwież" button in the skills group: re-discovers skills from the user
+  directory without restarting the app
+- "Importuj skilla..." button: pick any `.md` file (from hidden folders
+  too), validate its `name`/`formats` frontmatter and copy it into
+  `~/.config/tlumacz/skills/`
+
+### Changed
+- All file dialogs (input, output, GGUF, glossary, skill import) now show
+  hidden files and folders, so paths like `~/.config` and dot-directories
+  are reachable
+
 ## [0.13.0] - 2026-08-19
 
 ### Added

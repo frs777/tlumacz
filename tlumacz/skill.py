@@ -101,6 +101,11 @@ def _slugify(name: str) -> str:
     return (safe or "skill") + ".md"
 
 
+def parse_skill(filename: str, text: str) -> Optional[Skill]:
+    """Public wrapper around :func:`_parse_skill` for the GUI."""
+    return _parse_skill(filename, text)
+
+
 def text_for_file(
     path: str | Path, enabled: Iterable[str] = ()
 ) -> tuple[str, str]:

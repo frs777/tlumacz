@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QDir, QSettings, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 
 from ..core import TranslatorConfig
 from ..glossary import Glossary
-from ..skill import discover_skills
+from ..skill import discover_skills, parse_skill, save_skill, user_skills_dir
 from .config import AppSettings, load_settings, save_settings
 from .theme import apply_theme
 from .worker import TranslationThread
@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
         self._settings, config_warning = load_settings()
         self._server = server
         self._thread: TranslationThread | None = None
-        self._skills = discover_skills()
+        self._skills: list = []
         self._skill_checkboxes: list[QCheckBox] = []
 
         self._build_ui()
@@ -244,19 +244,92 @@ class MainWindow(QMainWindow):
         box = QGroupBox("Skille (formaty tłumaczeń)")
         layout = QVBoxLayout(box)
 
-        if not self._skills:
-            layout.addWidget(QLabel("Brak dostępnych skilli."))
-            return box
+        self._skill_row = QWidget()
+        self._skill_row_layout = QVBoxLayout(self._skill_row)
+        self._skill_row_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._skill_row)
 
+        button_row = QHBoxLayout()
+        refresh_btn = QPushButton("Odśwież")
+        refresh_btn.setObjectName("refreshSkillsBtn")
+        refresh_btn.clicked.connect(self._on_refresh_skills)
+        import_btn = QPushButton("Importuj skilla...")
+        import_btn.setObjectName("importSkillBtn")
+        import_btn.clicked.connect(self._on_import_skill)
+        button_row.addWidget(refresh_btn)
+        button_row.addWidget(import_btn)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        self._reload_skills()
+        return box
+
+    def _reload_skills(self) -> None:
+        """Re-discover skills and rebuild the checkboxes, keeping enabled ones."""
+        for checkbox in self._skill_checkboxes:
+            self._skill_row_layout.removeWidget(checkbox)
+            checkbox.deleteLater()
+        self._skill_checkboxes.clear()
+
+        self._skills = discover_skills()
+        if not self._skills:
+            label = QLabel("Brak dostępnych skilli. Dodaj plik .md w "
+                           + str(user_skills_dir()) + " lub użyj „Importuj skilla...”.")
+            label.setObjectName("noSkillsLabel")
+            self._skill_row_layout.addWidget(label)
+            return
+
+        enabled = set(self._settings.enabled_skills)
         for skill in self._skills:
             checkbox = QCheckBox(
                 f"{skill.name} — {', '.join(skill.formats)}"
             )
             checkbox.setObjectName(f"skill_{skill.name}")
             checkbox.toggled.connect(self._on_skills_changed)
+            checkbox.setChecked(skill.name in enabled)
             self._skill_checkboxes.append(checkbox)
-            layout.addWidget(checkbox)
-        return box
+            self._skill_row_layout.addWidget(checkbox)
+
+    def _on_refresh_skills(self) -> None:
+        self._reload_skills()
+        save_settings(self._collect_settings())
+        self._append_log(f"Odświeżono listę skilli: {len(self._skills)}")
+
+    def _on_import_skill(self) -> None:
+        start = str(user_skills_dir()) if user_skills_dir().is_dir() else str(
+            user_skills_dir()
+        )
+        path = self._browse_file(
+            "Wybierz plik skilla (.md)",
+            start,
+            "Markdown (*.md);;Wszystkie pliki (*)",
+        )
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.critical(
+                self, "Skille", f"Nie można odczytać pliku: {exc}"
+            )
+            return
+        skill = parse_skill(Path(path).name, text)
+        if skill is None:
+            QMessageBox.warning(
+                self,
+                "Skille",
+                "To nie jest skilla: w nagłówku pliku brakuje pól "
+                "`name` i `formats`.\n\nPrzykład:\n"
+                "---\nname: Mój skilla\nformats: md, markdown\n---\n"
+                "treść instrukcji",
+            )
+            return
+        target = save_skill(
+            "", skill.name, ", ".join(skill.formats), skill.text
+        )
+        self._reload_skills()
+        save_settings(self._collect_settings())
+        self._append_log(f"Zaimportowano skillę: {target}")
 
     def _build_help_tab(self) -> QWidget:
         tab = QWidget()
@@ -564,9 +637,41 @@ app shows a message about it.</p>
 
     # ------------------------------------------------------------ handlers --
 
+    def _browse_file(
+        self,
+        title: str,
+        start: str,
+        filters: str,
+        save: bool = False,
+    ) -> str:
+        """Open a file dialog that also shows hidden files and folders."""
+        dialog = QFileDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setNameFilter(filters)
+        dialog.setFilter(
+            QDir.Filter.Files
+            | QDir.Filter.Dirs
+            | QDir.Filter.Hidden
+            | QDir.Filter.NoDotAndDotDot
+        )
+        if save:
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+            dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        else:
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+            dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        if start:
+            dialog.setDirectory(start)
+        if dialog.exec() == QFileDialog.DialogCode.Accepted:
+            return dialog.selectedFiles()[0]
+        return ""
+
     def _on_browse_input(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Wybierz plik wejściowy", self.input_path.text()
+        path = self._browse_file(
+            "Wybierz plik wejściowy",
+            self.input_path.text(),
+            "Markdown (*.md *.markdown);;Tekst (*.txt *.text);;"
+            "HTML (*.html *.htm);;Wszystkie pliki (*)",
         )
         if path:
             self.input_path.setText(path)
@@ -575,29 +680,30 @@ app shows a message about it.</p>
             )
 
     def _on_browse_output(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Wybierz plik wyjściowy", self.output_path.text()
+        path = self._browse_file(
+            "Wybierz plik wyjściowy",
+            self.output_path.text(),
+            "Wszystkie pliki (*)",
+            save=True,
         )
         if path:
             self.output_path.setText(path)
 
     def _on_browse_gguf(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
+        path = self._browse_file(
             "Wybierz plik modelu (GGUF)",
             self.server_gguf_path.text(),
-            "GGUF files (*.gguf);;All files (*)",
+            "GGUF files (*.gguf);;Wszystkie pliki (*)",
         )
         if path:
             self.server_gguf_path.setText(path)
             save_settings(self._collect_settings())
 
     def _on_browse_glossary(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
+        path = self._browse_file(
             "Wybierz plik glosariusza (CSV)",
             self.glossary_path.text(),
-            "CSV files (*.csv);;All files (*)",
+            "CSV files (*.csv);;Wszystkie pliki (*)",
         )
         if path:
             self.glossary_path.setText(path)

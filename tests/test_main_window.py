@@ -79,3 +79,23 @@ def test_tabs_and_help(qapp):
     window.help_language.setCurrentIndex(0)  # Polish
     assert "Ustawienia" in window.help_view.toHtml()
     window.close()
+
+
+def test_refresh_skills_picks_up_new_user_skill(qapp, config_home):
+    from tlumacz.skill import save_skill
+    from tlumacz.qt_gui.config import load_settings
+    from tlumacz.qt_gui.main_window import MainWindow
+
+    window = MainWindow(server=None)
+    before = {cb.text() for cb in window._skill_checkboxes}
+    assert not any("Nowy skilla" in text for text in before)
+
+    save_skill("", "Nowy skilla", "docx, doc", "Instrukcje.")
+    window._on_refresh_skills()
+    after = {cb.text() for cb in window._skill_checkboxes}
+    assert any("Nowy skilla" in text for text in after)
+
+    settings, warning = load_settings()
+    assert warning is None
+    assert settings.enabled_skills == window._enabled_skill_names()
+    window.close()
