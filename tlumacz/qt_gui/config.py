@@ -18,12 +18,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from ..preprocess import DEFAULT_SKIP_PATTERNS
+
 APP_NAME = "tlumacz"
 
 _INT_FIELDS = {"chunk_size", "server_port"}
 _FLOAT_FIELDS = {"temperature"}
 _BOOL_FIELDS = {"auto_start_server"}
-_LIST_FIELDS = {"enabled_skills"}
+_LIST_FIELDS = {"enabled_skills", "skip_line_patterns"}
 
 
 def config_dir() -> Path:
@@ -47,8 +49,12 @@ class AppSettings:
     glossary_path: str = ""
     system_prompt: str = ""
     enabled_skills: list[str] = field(default_factory=list)
+    skip_line_patterns: list[str] = field(
+        default_factory=lambda: list(DEFAULT_SKIP_PATTERNS)
+    )
     server_port: int = 18080
     server_gguf_path: str = ""
+    server_chat_template: str = ""
     auto_start_server: bool = False
     last_input: str = ""
     last_output: str = ""

@@ -39,8 +39,10 @@ from PySide6.QtWidgets import (
 
 from ..core import TranslatorConfig
 from ..glossary import Glossary
+from ..preprocess import DEFAULT_SKIP_PATTERNS
+from ..server import SERVER_MODEL_ALIAS
 from ..skill import discover_skills, parse_skill, save_skill, user_skills_dir
-from .config import AppSettings, load_settings, save_settings
+from .config import AppSettings, config_dir, load_settings, save_settings
 from .theme import apply_theme
 from .worker import TranslationThread
 
@@ -100,9 +102,12 @@ class MainWindow(QMainWindow):
         self._thread: TranslationThread | None = None
         self._skills: list = []
         self._skill_checkboxes: list[QCheckBox] = []
+        self._loading = True
+        self._config_file_present = (config_dir() / "config.json").is_file()
 
         self._build_ui()
         self._load_settings_into_ui()
+        self._loading = False
         self._set_idle_state()
         if config_warning:
             QMessageBox.warning(self, "Konfiguracja", config_warning)
@@ -472,7 +477,8 @@ Fields: <code>base_url</code>, <code>api_key</code>, <code>model</code>,
 <code>chunk_size</code>, <code>temperature</code>,
 <code>target_language</code>, <code>theme</code>, <code>glossary_path</code>,
 <code>system_prompt</code>, <code>enabled_skills</code>,
-<code>server_port</code>, <code>server_gguf_path</code>,
+<code>skip_line_patterns</code>, <code>server_port</code>,
+<code>server_gguf_path</code>, <code>server_chat_template</code>,
 <code>auto_start_server</code>, <code>last_input</code>,
 <code>last_output</code>.</p>
 <p>A corrupt file or wrong-typed fields are repaired with defaults and the
@@ -518,6 +524,13 @@ app shows a message about it.</p>
         )
         self.prompt_edit.setFixedHeight(70)
 
+        self.skip_patterns_edit = QLineEdit()
+        self.skip_patterns_edit.setObjectName("skipPatterns")
+        self.skip_patterns_edit.setPlaceholderText(
+            "Regex rozdzielone przecinkiem; pasujące linie nie są tłumaczone "
+            "(np. metadane YAML). Puste = wartości domyślne."
+        )
+
         form.addRow("Base URL:", self.base_url)
         form.addRow("API key:", self.api_key)
         form.addRow("Model:", self.model)
@@ -526,6 +539,7 @@ app shows a message about it.</p>
         form.addRow("Język docelowy:", self.language)
         form.addRow("Motyw:", self.theme)
         form.addRow("Własny prompt:", self.prompt_edit)
+        form.addRow("Pomijane linie (regex):", self.skip_patterns_edit)
         return box
 
     def _build_server_group(self) -> QGroupBox:
@@ -553,8 +567,14 @@ app shows a message about it.</p>
         )
         self.auto_start_server.setObjectName("autoStartServer")
 
+        self.server_chat_template = QComboBox()
+        self.server_chat_template.setObjectName("serverChatTemplate")
+        self.server_chat_template.addItem("Auto (jinja)", "")
+        self.server_chat_template.addItem("chatml (modele transl. gemma)", "chatml")
+
         form.addRow("Port:", self.server_port)
         form.addRow("Plik modelu (GGUF):", gguf_row)
+        form.addRow("Szablon czatu:", self.server_chat_template)
         form.addRow(self.auto_start_server)
         return box
 
@@ -564,13 +584,23 @@ app shows a message about it.</p>
         return TranslatorConfig(
             base_url=self.base_url.text().strip(),
             api_key=self.api_key.text().strip(),
-            model=self.model.text().strip(),
+            model=(
+                SERVER_MODEL_ALIAS
+                if self._server is not None
+                else self.model.text().strip()
+            ),
+            chat_template_kwargs=(
+                {"enable_thinking": False}
+                if self._server is not None
+                else None
+            ),
             chunk_size=self.chunk_size.value(),
             temperature=self.temperature.value(),
             target_language=self.language.currentText(),
             glossary_path=self.glossary_path.text().strip() or None,
             system_prompt=self.prompt_edit.toPlainText().strip() or None,
             enabled_skills=self._enabled_skill_names(),
+            skip_line_patterns=self._skip_pattern_list(),
         )
 
     def _collect_settings(self) -> AppSettings:
@@ -588,8 +618,10 @@ app shows a message about it.</p>
         settings.glossary_path = self.glossary_path.text().strip()
         settings.system_prompt = self.prompt_edit.toPlainText().strip()
         settings.enabled_skills = self._enabled_skill_names()
+        settings.skip_line_patterns = self._skip_pattern_list()
         settings.server_port = self.server_port.value()
         settings.server_gguf_path = self.server_gguf_path.text().strip()
+        settings.server_chat_template = self.server_chat_template.currentData()
         settings.auto_start_server = self.auto_start_server.isChecked()
         return settings
 
@@ -601,7 +633,9 @@ app shows a message about it.</p>
             self.base_url.setText(server_url)
             self._append_log(f"Własny serwer uruchomiony: {server_url}")
         self.api_key.setText(s.api_key)
-        self.model.setText(s.model)
+        self.model.setText(
+            SERVER_MODEL_ALIAS if self._server is not None else s.model
+        )
         self.chunk_size.setValue(s.chunk_size)
         self.temperature.setValue(s.temperature)
         index = self.language.findText(s.target_language)
@@ -615,11 +649,16 @@ app shows a message about it.</p>
         self.glossary_path.setText(s.glossary_path)
         self._refresh_glossary_count()
         self.prompt_edit.setPlainText(s.system_prompt)
+        self.skip_patterns_edit.setText(
+            ", ".join(s.skip_line_patterns or DEFAULT_SKIP_PATTERNS)
+        )
         enabled = set(s.enabled_skills)
         for skill, checkbox in zip(self._skills, self._skill_checkboxes):
             checkbox.setChecked(skill.name in enabled)
         self.server_port.setValue(s.server_port)
         self.server_gguf_path.setText(s.server_gguf_path)
+        template_index = self.server_chat_template.findData(s.server_chat_template)
+        self.server_chat_template.setCurrentIndex(template_index)
         self.auto_start_server.setChecked(s.auto_start_server)
 
     def _append_log(self, message: str) -> None:
@@ -785,7 +824,16 @@ app shows a message about it.</p>
             if checkbox.isChecked()
         ]
 
+    def _skip_pattern_list(self) -> list[str]:
+        """Parse the regex field into a list, falling back to defaults."""
+        raw = self.skip_patterns_edit.text().strip()
+        if not raw:
+            return list(DEFAULT_SKIP_PATTERNS)
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
     def _on_skills_changed(self) -> None:
+        if self._loading:
+            return
         save_settings(self._collect_settings())
 
     def theme_mode(self) -> str:
@@ -793,6 +841,8 @@ app shows a message about it.</p>
         return self.theme.currentData() or "system"
 
     def _on_theme_changed(self) -> None:
+        if self._loading:
+            return
         save_settings(self._collect_settings())
         app = QApplication.instance()
         if app is not None:
@@ -861,7 +911,8 @@ app shows a message about it.</p>
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if self._thread is not None:
             self._thread.stop()
-        save_settings(self._collect_settings())
+        if self._config_file_present or (config_dir() / "config.json").is_file():
+            save_settings(self._collect_settings())
         super().closeEvent(event)
 
 

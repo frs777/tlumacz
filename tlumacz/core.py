@@ -7,12 +7,19 @@ by the GUI, future CLI versions, and installed globally as a Python package.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 import openai
 
 from .glossary import Glossary, MAX_PROMPT_ENTRIES
+from .preprocess import (
+    DEFAULT_SKIP_PATTERNS,
+    protect,
+    restore,
+    split_segments,
+)
 from .skill import text_for_file
 
 
@@ -29,6 +36,10 @@ class TranslatorConfig:
     system_prompt: Optional[str] = None
     glossary_path: Optional[str] = None
     enabled_skills: list[str] = field(default_factory=list)
+    chat_template_kwargs: Optional[dict] = None
+    skip_line_patterns: list[str] = field(
+        default_factory=lambda: list(DEFAULT_SKIP_PATTERNS)
+    )
 
     def __post_init__(self) -> None:
         base = self.system_prompt
@@ -38,7 +49,9 @@ class TranslatorConfig:
                 f"Translate the provided text into {self.target_language} "
                 "while preserving Markdown formatting. "
                 f"If the text is already in {self.target_language}, return it "
-                "unchanged without translating it again."
+                "unchanged without translating it again. "
+                "Respond directly with the translation only. Do not include "
+                "any thinking, reasoning, or commentary."
             )
         glossary_text = self._load_glossary_text()
         if glossary_text:
@@ -111,9 +124,9 @@ class Translator:
         system = self.config.system_prompt
         if skill_text:
             system = system.rstrip() + "\n\n" + skill_text
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=[
+        request_kwargs: dict = {
+            "model": self.config.model,
+            "messages": [
                 {"role": "system", "content": system},
                 {
                     "role": "user",
@@ -124,9 +137,16 @@ class Translator:
                     ),
                 },
             ],
-            temperature=self.config.temperature,
-        )
-        return response.choices[0].message.content or ""
+            "temperature": self.config.temperature,
+            "max_tokens": 6000,
+        }
+        if self.config.chat_template_kwargs:
+            request_kwargs["extra_body"] = {
+                "chat_template_kwargs": self.config.chat_template_kwargs
+            }
+        response = self.client.chat.completions.create(**request_kwargs)
+        content = response.choices[0].message.content or ""
+        return _strip_eos_tokens(content)
 
     def translate_file(
         self,
@@ -163,8 +183,13 @@ class Translator:
         with open(input_path, "r", encoding="utf-8") as f:
             text = f.read()
 
-        chunks = self._split_into_chunks(text)
-        total = len(chunks)
+        masked, protected = protect(text)
+        segments = split_segments(
+            masked,
+            self.config.chunk_size,
+            self.config.skip_line_patterns,
+        )
+        total = sum(1 for kind, _ in segments if kind == "translate")
 
         def log(msg: str) -> None:
             if log_callback is not None:
@@ -179,21 +204,43 @@ class Translator:
         if skill_name:
             log(f"Using skill: {skill_name}")
 
+        if protected:
+            log(f"Protected {len(protected)} code/URL fragment(s)")
         log(f"Processing {total} chunk(s)...")
 
         with open(output_path, "w", encoding="utf-8") as out:
-            for index, chunk in enumerate(chunks, start=1):
+            written = 0
+            for kind, content in segments:
                 if is_cancelled is not None and is_cancelled():
                     log("Translation cancelled by user.")
                     raise TranslationCancelledError("Translation was cancelled.")
 
-                log(f"Translating chunk {index}/{total}...")
+                if kind == "keep":
+                    out.write(content)
+                    out.write("\n")
+                    continue
 
-                translated = self._translate_chunk(chunk, skill_text)
-                out.write(translated)
+                written += 1
+                log(f"Translating chunk {written}/{total}...")
+
+                translated = self._translate_chunk(content, skill_text)
+                out.write(restore(translated, protected))
                 out.write("\n\n")
 
                 if progress_callback is not None:
-                    progress_callback(index, total)
+                    progress_callback(written, total)
 
         log(f"Translation saved to: {output_path}")
+
+
+_EOS_TOKEN_RE = re.compile(r"(<\|im_end\|>|<\|end_of_turn\|>|<\|eot_id\|>|</s>)\s*$")
+
+
+def _strip_eos_tokens(content: str) -> str:
+    """Remove trailing chat-template end tokens leaked into the output.
+
+    Some models (e.g. chatml templates) emit their end-of-turn token at the
+    end of a response even though it is a control token. It is never part of
+    the translation and must not land in the output file.
+    """
+    return _EOS_TOKEN_RE.sub("", content)

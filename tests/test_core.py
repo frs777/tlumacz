@@ -9,7 +9,16 @@ from tlumacz.core import (
     Translator,
     TranslatorConfig,
     TranslationCancelledError,
+    _strip_eos_tokens,
 )
+
+
+def test_strip_eos_tokens():
+    assert _strip_eos_tokens("Tekst.\n<|im_end|>") == "Tekst.\n"
+    assert _strip_eos_tokens("Tekst.\n<|end_of_turn|>") == "Tekst.\n"
+    assert _strip_eos_tokens("Tekst.</s>") == "Tekst."
+    assert _strip_eos_tokens("Tekst.") == "Tekst."
+    assert _strip_eos_tokens("<|im_end|>") == ""
 
 
 class _FakeClient:

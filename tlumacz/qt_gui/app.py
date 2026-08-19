@@ -31,6 +31,7 @@ def main() -> int:
             ServerConfig(
                 port=settings.server_port,
                 gguf_path=settings.server_gguf_path,
+                chat_template=settings.server_chat_template,
             )
         )
         try:

@@ -17,3 +17,8 @@ __pycache__/
 build/
 dist-venv/
 .venv/
+
+# Duże lokalne słowniki / eksporty / śmieci
+glossary_full.csv
+kimi-export-*.md
+not

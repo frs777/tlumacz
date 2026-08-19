@@ -17,6 +17,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+SERVER_MODEL_ALIAS = "local"
+"""Model name used in OpenAI requests against the managed server.
+
+The managed llama-server is always started with ``--alias local``, so API
+requests must address the model as ``local`` regardless of the GGUF file.
+"""
+
+
 class ServerStartError(Exception):
     """Raised when the llama-server process cannot be started or probed."""
 
@@ -28,8 +36,9 @@ class ServerConfig:
     host: str = "127.0.0.1"
     port: int = 18080
     gguf_path: str = ""
-    ctx_size: int = 4096
+    ctx_size: int = 8192
     parallel: int = 1
+    chat_template: str = ""
     extra_args: list[str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -84,7 +93,12 @@ class LlamaServer:
             str(self.config.ctx_size),
             "--parallel",
             str(self.config.parallel),
-        ] + list(self.config.extra_args)
+        ]
+        if self.config.chat_template:
+            command += ["--no-jinja", "--chat-template", self.config.chat_template]
+        else:
+            command.append("--jinja")
+        command += list(self.config.extra_args)
 
         self._process = subprocess.Popen(
             command,
@@ -96,10 +110,10 @@ class LlamaServer:
         deadline = time.monotonic() + 60.0
         while time.monotonic() < deadline:
             if self._process.poll() is not None:
+                code = self._process.returncode
                 self._process = None
                 raise ServerStartError(
-                    f"llama-server zakończył się przedwcześnie (kod "
-                    f"{self._process.returncode if self._process else '?'}). "
+                    f"llama-server zakończył się przedwcześnie (kod {code}). "
                     "Sprawdź ścieżkę GGUF i dane modelu."
                 )
             if self.is_running():
