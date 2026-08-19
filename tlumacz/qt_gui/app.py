@@ -11,24 +11,13 @@ from __future__ import annotations
 import atexit
 import signal
 import sys
-from importlib import resources
 
 from PySide6.QtWidgets import QApplication
 
 from ..server import LlamaServer, ServerConfig, ServerStartError
 from .config import load_settings
 from .main_window import MainWindow
-
-
-def _load_stylesheet(app: QApplication) -> None:
-    """Load the bundled QSS stylesheet from package resources."""
-    try:
-        qss = resources.files("tlumacz.qt_gui.resources").joinpath("style.qss")
-        with qss.open("r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
-    except (OSError, ModuleNotFoundError):
-        # Styling is cosmetic; keep going if the file is missing.
-        pass
+from .theme import apply_theme
 
 
 def main() -> int:
@@ -54,7 +43,7 @@ def main() -> int:
     app.setApplicationDisplayName("Tłumacz")
     app.setDesktopFileName("tlumacz")
 
-    _load_stylesheet(app)
+    apply_theme(app, settings.theme)
 
     def _handle_signal(signum: int, _frame: object) -> None:
         """Gracefully quit the Qt loop so the managed server is stopped."""
@@ -65,6 +54,14 @@ def main() -> int:
         signal.signal(signal.SIGINT, _handle_signal)
 
     window = MainWindow(server=server)
+
+    def _on_system_color_scheme_changed() -> None:
+        """Re-apply the theme when the OS color scheme changes (system mode)."""
+        if window.theme_mode() == "system":
+            apply_theme(app, "system")
+
+    app.styleHints().colorSchemeChanged.connect(_on_system_color_scheme_changed)
+
     window.show()
     rc = app.exec()
 

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-08-19
+
+### Added
+- Theme switching in the GUI: `system` (follows the OS color scheme), `light` and `dark`, selectable via a new "Motyw" combo box in the API settings group
+- New `tlumacz/qt_gui/theme.py` module (`resolve_theme`, `apply_theme`, `load_stylesheet`)
+- Separate QSS stylesheets: `style_dark.qss` (Catppuccin Mocha) and `style_light.qss` (Catppuccin Latte)
+- The theme re-applies automatically when the OS color scheme changes while in `system` mode
+- Config field: `theme` (default `"system"`), persisted immediately on change
+
+### Changed
+- `tlumacz/qt_gui/app.py` now applies the theme from `settings.theme` instead of a single hard-coded stylesheet
+
 ## [0.5.1] - 2026-08-19
 
 ### Added

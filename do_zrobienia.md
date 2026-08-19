@@ -39,7 +39,7 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
 - [ ] **Glosariusz / słownik** — opcja dodania **własnego pliku CSV** z parami
       źródło → tłumaczenie (wybór pliku w GUI) oraz dodawanie wpisów z poziomu
       GUI; wpisy stosowane podczas tłumaczenia.
-- [ ] **Motyw (theme)** — przełączanie motywów **dzień / noc / system** z
+- [x] **Motyw (theme)** — przełączanie motywów **dzień / noc / system** z
       poziomu GUI.
 
 ## Pakowanie / repo

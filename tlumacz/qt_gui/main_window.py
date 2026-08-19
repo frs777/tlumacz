@@ -15,6 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from ..core import TranslatorConfig
 from .config import AppSettings, load_settings, save_settings
+from .theme import apply_theme
 from .worker import TranslationThread
 
 try:  # optional; only used when the managed server is running
@@ -56,6 +58,12 @@ SUPPORTED_LANGUAGES = [
     "Czech",
     "Dutch",
     "Russian",
+]
+
+THEME_CHOICES = [
+    ("Systemowy", "system"),
+    ("Jasny", "light"),
+    ("Ciemny", "dark"),
 ]
 
 LANGUAGE_SUFFIXES = {
@@ -190,12 +198,19 @@ class MainWindow(QMainWindow):
         self.language.addItems(SUPPORTED_LANGUAGES)
         self.language.currentTextChanged.connect(self._on_language_changed)
 
+        self.theme = QComboBox()
+        self.theme.setObjectName("theme")
+        for label, value in THEME_CHOICES:
+            self.theme.addItem(label, value)
+        self.theme.currentIndexChanged.connect(self._on_theme_changed)
+
         form.addRow("Base URL:", self.base_url)
         form.addRow("API key:", self.api_key)
         form.addRow("Model:", self.model)
         form.addRow("Rozmiar chunka:", self.chunk_size)
         form.addRow("Temperatura:", self.temperature)
         form.addRow("Język docelowy:", self.language)
+        form.addRow("Motyw:", self.theme)
         return box
 
     # ------------------------------------------------------------- helpers --
@@ -221,6 +236,7 @@ class MainWindow(QMainWindow):
             last_input=self.input_path.text().strip(),
             last_output=self.output_path.text().strip(),
         )
+        settings.theme = self.theme_mode()
         settings.server_port = self._settings.server_port
         settings.server_gguf_path = self._settings.server_gguf_path
         settings.auto_start_server = self._settings.auto_start_server
@@ -240,6 +256,9 @@ class MainWindow(QMainWindow):
         index = self.language.findText(s.target_language)
         if index >= 0:
             self.language.setCurrentIndex(index)
+        theme_index = self.theme.findData(s.theme)
+        if theme_index >= 0:
+            self.theme.setCurrentIndex(theme_index)
         self.input_path.setText(s.last_input)
         self.output_path.setText(s.last_output)
 
@@ -281,6 +300,16 @@ class MainWindow(QMainWindow):
             self.output_path.setText(
                 _default_output_path(input_path, _language)
             )
+
+    def theme_mode(self) -> str:
+        """Return the currently selected theme mode (``system``/``light``/``dark``)."""
+        return self.theme.currentData() or "system"
+
+    def _on_theme_changed(self) -> None:
+        save_settings(self._collect_settings())
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, self.theme_mode())
 
     def _on_translate(self) -> None:
         input_path = self.input_path.text().strip()

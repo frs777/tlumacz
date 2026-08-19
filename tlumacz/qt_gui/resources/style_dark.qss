@@ -1,4 +1,4 @@
-/* Tłumacz — global QSS stylesheet */
+/* Tłumacz — dark QSS stylesheet (Catppuccin Mocha) */
 
 QMainWindow, QDialog {
     background-color: #1e1e2e;
