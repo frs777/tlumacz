@@ -22,3 +22,8 @@ dist-venv/
 glossary_full.csv
 kimi-export-*.md
 not
+
+# Artefakty pakietowania AUR (buduj w osobnym BUILDDIR, nie w katalogu repo!)
+*.pkg.tar.zst
+tlumacz-*.tar.gz
+pkg/

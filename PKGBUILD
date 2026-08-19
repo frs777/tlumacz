@@ -1,12 +1,13 @@
-# Maintainer: Tlumacz Team <team@example.com>
-# NOTE: Replace url/source with the real repository URL before submitting to AUR.
+# Maintainer: frs <frs@users.noreply.github.com>
+# Build from a local source tarball (see build-aur.sh). Upload to AUR:
+#   replace source with: https://github.com/frs777/tlumacz/archive/v$pkgver.tar.gz
 
 pkgname=tlumacz
-pkgver=0.5.1
+pkgver=0.17.1
 pkgrel=1
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')
-url="https://github.com/protonpass/tlumacz"
+url="https://github.com/frs777/tlumacz"
 license=('MIT')
 depends=(
     'python'
@@ -14,15 +15,17 @@ depends=(
     'python-openai'
     'hicolor-icon-theme'
 )
+optdepends=(
+    'python-pypdf: PDF extraction fallback (when poppler is missing)'
+    'python-docx: DOCX document extraction'
+    'poppler: PDF extraction (pdftotext)'
+)
 makedepends=(
     'python-build'
     'python-installer'
-    'python-setuptools'
-    'python-wheel'
 )
-source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-# Replace SKIP with the real sha256sum of the release tarball (run: sha256sum file)
-sha256sums=('SKIP')
+source=("tlumacz-$pkgver.tar.gz")
+b2sums=('3ade7014992dca756c9d6be7f4de347ab767d0fc1c290a34b0d69fc3b058b73614e8e39d8c202fa8376024e9e964bfb1ff0e338a9e770f0b04efdeadf8d68fe1')
 
 build() {
     cd "$pkgname-$pkgver"
