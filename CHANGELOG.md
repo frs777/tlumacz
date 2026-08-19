@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-08-19
+
+### Added
+- "Serwer lokalny" group in the GUI: server port, GGUF model file path (with file picker) and an "auto-start server with the app" checkbox — previously only editable via `config.json`
+- Custom translation prompt: an optional "Własny prompt" field (styl, terminologia, ton) that replaces the default system prompt; the glossary is still appended independently
+- Config field: `system_prompt`
+
+### Changed
+- `_collect_settings` reads the server settings from the GUI fields instead of copying them from the previously loaded config
+
 ## [0.9.0] - 2026-08-19
 
 ### Added

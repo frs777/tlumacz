@@ -44,6 +44,7 @@ class AppSettings:
     target_language: str = "Polish"
     theme: str = "system"
     glossary_path: str = ""
+    system_prompt: str = ""
     server_port: int = 18080
     server_gguf_path: str = ""
     auto_start_server: bool = False

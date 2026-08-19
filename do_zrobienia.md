@@ -15,10 +15,10 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       warto to pokazywać w UI (np. etykieta „serwer użyje modelu: local").
 - [x] **Ścieżka do pliku GGUF** — możliwość podania bezpośredniej ścieżki do
       modelu `.gguf` w ustawieniach (np. do uruchomienia lokalnego llama.cpp
-      bez osobnego serwera). **Zrobione częściowo**: pola `server_gguf_path`,
-      `server_port`, `auto_start_server` w config.json + `LlamaServer`
-      (`tlumacz/server.py`); brak jeszcze pól w GUI.
-- [ ] **Własny prompt użytkownika** — pole w ustawieniach na spersonalizowany
+      bez osobnego serwera). Pola `server_gguf_path`, `server_port`,
+      `auto_start_server` w config.json + `LlamaServer`
+      (`tlumacz/server.py`) oraz grupa „Serwer lokalny" w GUI.
+- [x] **Własny prompt użytkownika** — pole w ustawieniach na spersonalizowany
       prompt tłumaczenia (np. styl, terminologia, ton wypowiedzi).
 - [x] **Walidacja config.json** — jeśli plik konfiguracji jest uszkodzony lub
       zawiera nieznane pola, GUI powinno wrócić do wartości domyślnych z

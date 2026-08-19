@@ -17,6 +17,7 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         root.addWidget(self._build_files_group())
         root.addWidget(self._build_glossary_group())
         root.addWidget(self._build_settings_group())
+        root.addWidget(self._build_server_group())
 
         controls = QHBoxLayout()
         self.translate_btn = QPushButton("Tłumacz")
@@ -248,6 +250,14 @@ class MainWindow(QMainWindow):
             self.theme.addItem(label, value)
         self.theme.currentIndexChanged.connect(self._on_theme_changed)
 
+        self.prompt_edit = QPlainTextEdit()
+        self.prompt_edit.setObjectName("systemPrompt")
+        self.prompt_edit.setPlaceholderText(
+            "Opcjonalny własny prompt tłumaczenia (styl, terminologia, ton). "
+            "Puste = domyślny prompt."
+        )
+        self.prompt_edit.setFixedHeight(70)
+
         form.addRow("Base URL:", self.base_url)
         form.addRow("API key:", self.api_key)
         form.addRow("Model:", self.model)
@@ -255,6 +265,37 @@ class MainWindow(QMainWindow):
         form.addRow("Temperatura:", self.temperature)
         form.addRow("Język docelowy:", self.language)
         form.addRow("Motyw:", self.theme)
+        form.addRow("Własny prompt:", self.prompt_edit)
+        return box
+
+    def _build_server_group(self) -> QGroupBox:
+        box = QGroupBox("Serwer lokalny (llama.cpp / GGUF)")
+        form = QFormLayout(box)
+
+        self.server_port = QSpinBox()
+        self.server_port.setObjectName("serverPort")
+        self.server_port.setRange(1024, 65535)
+        self.server_port.setSingleStep(100)
+
+        gguf_row = QHBoxLayout()
+        self.server_gguf_path = QLineEdit()
+        self.server_gguf_path.setObjectName("serverGgufPath")
+        self.server_gguf_path.setPlaceholderText(
+            "Ścieżka do pliku modelu .gguf (opcjonalnie)"
+        )
+        gguf_browse = QPushButton("Przeglądaj...")
+        gguf_browse.clicked.connect(self._on_browse_gguf)
+        gguf_row.addWidget(self.server_gguf_path, 1)
+        gguf_row.addWidget(gguf_browse)
+
+        self.auto_start_server = QCheckBox(
+            "Uruchamiaj serwer razem z programem"
+        )
+        self.auto_start_server.setObjectName("autoStartServer")
+
+        form.addRow("Port:", self.server_port)
+        form.addRow("Plik modelu (GGUF):", gguf_row)
+        form.addRow(self.auto_start_server)
         return box
 
     # ------------------------------------------------------------- helpers --
@@ -268,6 +309,7 @@ class MainWindow(QMainWindow):
             temperature=self.temperature.value(),
             target_language=self.language.currentText(),
             glossary_path=self.glossary_path.text().strip() or None,
+            system_prompt=self.prompt_edit.toPlainText().strip() or None,
         )
 
     def _collect_settings(self) -> AppSettings:
@@ -283,9 +325,10 @@ class MainWindow(QMainWindow):
         )
         settings.theme = self.theme_mode()
         settings.glossary_path = self.glossary_path.text().strip()
-        settings.server_port = self._settings.server_port
-        settings.server_gguf_path = self._settings.server_gguf_path
-        settings.auto_start_server = self._settings.auto_start_server
+        settings.system_prompt = self.prompt_edit.toPlainText().strip()
+        settings.server_port = self.server_port.value()
+        settings.server_gguf_path = self.server_gguf_path.text().strip()
+        settings.auto_start_server = self.auto_start_server.isChecked()
         return settings
 
     def _load_settings_into_ui(self) -> None:
@@ -309,6 +352,10 @@ class MainWindow(QMainWindow):
         self.output_path.setText(s.last_output)
         self.glossary_path.setText(s.glossary_path)
         self._refresh_glossary_count()
+        self.prompt_edit.setPlainText(s.system_prompt)
+        self.server_port.setValue(s.server_port)
+        self.server_gguf_path.setText(s.server_gguf_path)
+        self.auto_start_server.setChecked(s.auto_start_server)
 
     def _append_log(self, message: str) -> None:
         self.log_view.appendPlainText(message)
@@ -341,6 +388,17 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.output_path.setText(path)
+
+    def _on_browse_gguf(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Wybierz plik modelu (GGUF)",
+            self.server_gguf_path.text(),
+            "GGUF files (*.gguf);;All files (*)",
+        )
+        if path:
+            self.server_gguf_path.setText(path)
+            save_settings(self._collect_settings())
 
     def _on_browse_glossary(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
