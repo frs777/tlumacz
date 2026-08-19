@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-08-19
+
+### Added
+- Glossary support: a two-column CSV glossary (`source,target`) injected into the translation system prompt so the model uses fixed translations
+- New `tlumacz/glossary.py` module (`Glossary`) free of Qt dependencies: CSV parsing with header detection, `#`-prefix stripping (inflection-dictionary format), case-insensitive deduplication, identity-pair filtering and a configurable entry cap
+- New "Glosariusz" group in the GUI: file picker, live entry count, and manual entry addition (`termin` + `tłumaczenie`) that appends to the selected CSV
+- Config field: `glossary_path`
+- Only the first 300 (non-identity) glossary entries are injected per prompt, and CSV reading stops early at that cap so huge dictionaries load instantly
+- Translation log reports when a glossary is in use
+
 ## [0.6.0] - 2026-08-19
 
 ### Added

@@ -12,6 +12,8 @@ from typing import Callable, Optional
 
 import openai
 
+from .glossary import Glossary, MAX_PROMPT_ENTRIES
+
 
 @dataclass
 class TranslatorConfig:
@@ -24,14 +26,32 @@ class TranslatorConfig:
     temperature: float = 0.1
     target_language: str = "Polish"
     system_prompt: Optional[str] = None
+    glossary_path: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if self.system_prompt is None:
-            self.system_prompt = (
+        base = self.system_prompt
+        if base is None:
+            base = (
                 "You are a professional technical translator. "
                 f"Translate the provided text into {self.target_language} "
                 "while preserving Markdown formatting."
             )
+        glossary_text = self._load_glossary_text()
+        if glossary_text:
+            base = base.rstrip() + "\n\n" + glossary_text
+        self.system_prompt = base
+
+    def _load_glossary_text(self) -> str:
+        """Return the glossary prompt fragment, or ``""`` when not usable."""
+        if not self.glossary_path:
+            return ""
+        try:
+            glossary = Glossary.from_csv(
+                self.glossary_path, max_entries=MAX_PROMPT_ENTRIES
+            )
+            return glossary.to_prompt()
+        except OSError:
+            return ""
 
 
 class TranslationCancelledError(Exception):
@@ -142,6 +162,9 @@ class Translator:
         def log(msg: str) -> None:
             if log_callback is not None:
                 log_callback(msg)
+
+        if self.config.glossary_path and os.path.exists(self.config.glossary_path):
+            log(f"Using glossary: {self.config.glossary_path}")
 
         log(f"Processing {total} chunk(s)...")
 
