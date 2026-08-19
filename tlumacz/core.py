@@ -34,7 +34,9 @@ class TranslatorConfig:
             base = (
                 "You are a professional technical translator. "
                 f"Translate the provided text into {self.target_language} "
-                "while preserving Markdown formatting."
+                "while preserving Markdown formatting. "
+                f"If the text is already in {self.target_language}, return it "
+                "unchanged without translating it again."
             )
         glossary_text = self._load_glossary_text()
         if glossary_text:

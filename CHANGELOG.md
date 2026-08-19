@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-19
+
+### Changed
+- The default translation system prompt now instructs the model to return the text unchanged when it is already in the target language, so already-Polish (or otherwise already-translated) input is not translated a second time
+
 ## [0.7.0] - 2026-08-19
 
 ### Added
