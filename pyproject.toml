@@ -34,8 +34,8 @@ dependencies = [
 tlumacz = "tlumacz.qt_gui.app:main"
 
 [project.urls]
-Homepage = "https://github.com/protonpass/tlumacz"
-Repository = "https://github.com/protonpass/tlumacz"
+Homepage = "https://github.com/frs777/tlumacz"
+Repository = "https://github.com/frs777/tlumacz"
 
 [tool.setuptools.packages.find]
 where = ["."]
