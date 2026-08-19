@@ -35,8 +35,8 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
 ## Tłumaczenie
 
 - [x] **Wykrywanie języka wejściowego** — automatyczne rozpoznawanie, czy tekst
-      jest już po polsku (żeby nie tłumaczyć po raz drugi) — realizowane przez
-      wewnętrzny prompt.
+      jest już w języku docelowym (żeby nie tłumaczyć po raz drugi) —
+      realizowane przez wewnętrzny prompt.
 - [x] **Glosariusz / słownik** — opcja dodania **własnego pliku CSV** z parami
       źródło → tłumaczenie (wybór pliku w GUI) oraz dodawanie wpisów z poziomu
       GUI; wpisy stosowane podczas tłumaczenia.
