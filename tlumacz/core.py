@@ -13,6 +13,7 @@ from typing import Callable, Optional
 import openai
 
 from .glossary import Glossary, MAX_PROMPT_ENTRIES
+from .skill import text_for_file
 
 
 @dataclass
@@ -27,6 +28,7 @@ class TranslatorConfig:
     target_language: str = "Polish"
     system_prompt: Optional[str] = None
     glossary_path: Optional[str] = None
+    enabled_skills: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         base = self.system_prompt
@@ -104,12 +106,15 @@ class Translator:
 
         return chunks
 
-    def _translate_chunk(self, chunk: str) -> str:
+    def _translate_chunk(self, chunk: str, skill_text: str = "") -> str:
         """Translate a single chunk via the configured API."""
+        system = self.config.system_prompt
+        if skill_text:
+            system = system.rstrip() + "\n\n" + skill_text
         response = self.client.chat.completions.create(
             model=self.config.model,
             messages=[
-                {"role": "system", "content": self.config.system_prompt},
+                {"role": "system", "content": system},
                 {
                     "role": "user",
                     "content": (
@@ -168,6 +173,12 @@ class Translator:
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
             log(f"Using glossary: {self.config.glossary_path}")
 
+        skill_text, skill_name = text_for_file(
+            input_path, self.config.enabled_skills
+        )
+        if skill_name:
+            log(f"Using skill: {skill_name}")
+
         log(f"Processing {total} chunk(s)...")
 
         with open(output_path, "w", encoding="utf-8") as out:
@@ -178,7 +189,7 @@ class Translator:
 
                 log(f"Translating chunk {index}/{total}...")
 
-                translated = self._translate_chunk(chunk)
+                translated = self._translate_chunk(chunk, skill_text)
                 out.write(translated)
                 out.write("\n\n")
 

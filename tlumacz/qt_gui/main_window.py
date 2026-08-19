@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 
 from ..core import TranslatorConfig
 from ..glossary import Glossary
+from ..skill import discover_skills
 from .config import AppSettings, load_settings, save_settings
 from .theme import apply_theme
 from .worker import TranslationThread
@@ -98,6 +99,8 @@ class MainWindow(QMainWindow):
         self._settings, config_warning = load_settings()
         self._server = server
         self._thread: TranslationThread | None = None
+        self._skills = discover_skills()
+        self._skill_checkboxes: list[QCheckBox] = []
 
         self._build_ui()
         self._load_settings_into_ui()
@@ -113,6 +116,7 @@ class MainWindow(QMainWindow):
 
         root.addWidget(self._build_files_group())
         root.addWidget(self._build_glossary_group())
+        root.addWidget(self._build_skills_group())
         root.addWidget(self._build_settings_group())
         root.addWidget(self._build_server_group())
 
@@ -219,6 +223,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.glossary_count_label)
         return box
 
+    def _build_skills_group(self) -> QGroupBox:
+        box = QGroupBox("Skille (formaty tłumaczeń)")
+        layout = QVBoxLayout(box)
+
+        if not self._skills:
+            layout.addWidget(QLabel("Brak dostępnych skilli."))
+            return box
+
+        for skill in self._skills:
+            checkbox = QCheckBox(
+                f"{skill.name} — {', '.join(skill.formats)}"
+            )
+            checkbox.setObjectName(f"skill_{skill.name}")
+            checkbox.toggled.connect(self._on_skills_changed)
+            self._skill_checkboxes.append(checkbox)
+            layout.addWidget(checkbox)
+        return box
+
     def _build_settings_group(self) -> QGroupBox:
         box = QGroupBox("Ustawienia API")
         form = QFormLayout(box)
@@ -310,6 +332,7 @@ class MainWindow(QMainWindow):
             target_language=self.language.currentText(),
             glossary_path=self.glossary_path.text().strip() or None,
             system_prompt=self.prompt_edit.toPlainText().strip() or None,
+            enabled_skills=self._enabled_skill_names(),
         )
 
     def _collect_settings(self) -> AppSettings:
@@ -326,6 +349,7 @@ class MainWindow(QMainWindow):
         settings.theme = self.theme_mode()
         settings.glossary_path = self.glossary_path.text().strip()
         settings.system_prompt = self.prompt_edit.toPlainText().strip()
+        settings.enabled_skills = self._enabled_skill_names()
         settings.server_port = self.server_port.value()
         settings.server_gguf_path = self.server_gguf_path.text().strip()
         settings.auto_start_server = self.auto_start_server.isChecked()
@@ -353,6 +377,9 @@ class MainWindow(QMainWindow):
         self.glossary_path.setText(s.glossary_path)
         self._refresh_glossary_count()
         self.prompt_edit.setPlainText(s.system_prompt)
+        enabled = set(s.enabled_skills)
+        for skill, checkbox in zip(self._skills, self._skill_checkboxes):
+            checkbox.setChecked(skill.name in enabled)
         self.server_port.setValue(s.server_port)
         self.server_gguf_path.setText(s.server_gguf_path)
         self.auto_start_server.setChecked(s.auto_start_server)
@@ -479,6 +506,16 @@ class MainWindow(QMainWindow):
             self.output_path.setText(
                 _default_output_path(input_path, _language)
             )
+
+    def _enabled_skill_names(self) -> list[str]:
+        return [
+            skill.name
+            for skill, checkbox in zip(self._skills, self._skill_checkboxes)
+            if checkbox.isChecked()
+        ]
+
+    def _on_skills_changed(self) -> None:
+        save_settings(self._collect_settings())
 
     def theme_mode(self) -> str:
         """Return the currently selected theme mode (``system``/``light``/``dark``)."""

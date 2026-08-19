@@ -23,6 +23,7 @@ APP_NAME = "tlumacz"
 _INT_FIELDS = {"chunk_size", "server_port"}
 _FLOAT_FIELDS = {"temperature"}
 _BOOL_FIELDS = {"auto_start_server"}
+_LIST_FIELDS = {"enabled_skills"}
 
 
 def config_dir() -> Path:
@@ -45,6 +46,7 @@ class AppSettings:
     theme: str = "system"
     glossary_path: str = ""
     system_prompt: str = ""
+    enabled_skills: list[str] = field(default_factory=list)
     server_port: int = 18080
     server_gguf_path: str = ""
     auto_start_server: bool = False
@@ -131,4 +133,8 @@ def _valid_value(name: str, value: Any) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     if name in _BOOL_FIELDS:
         return isinstance(value, bool)
+    if name in _LIST_FIELDS:
+        return isinstance(value, list) and all(
+            isinstance(item, str) for item in value
+        )
     return isinstance(value, str)

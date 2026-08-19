@@ -23,7 +23,10 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
 - [x] **Walidacja config.json** — jeśli plik konfiguracji jest uszkodzony lub
       zawiera nieznane pola, GUI powinno wrócić do wartości domyślnych z
       komunikatem zamiast cichego błędu.
-- [ ] **Wstrzykiwanie skilli** - Dodatkowe skille dotyczą tłumaczeń roznych formatów.
+- [x] **Wstrzykiwanie skilli** — dodatkowe skille dotyczą tłumaczeń różnych
+      formatów. Skille `.md` w pakiecie `tlumacz/skills/` (frontmatter:
+      `name`, `formats`), wybór w GUI (grupa „Skille"), wstrzykiwane do
+      promptu gdy rozszerzenie pliku wejściowego pasuje do włączonego skilla.
 
 ## Dokumentacja / pomoc
 
