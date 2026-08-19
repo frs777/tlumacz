@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.1] - 2026-08-19
+
+### Fixed
+- Bilingual/multilingual documents were only partially translated (the model
+  detected the dominant language and left other languages untouched). The
+  default system and user prompts now explicitly instruct the model to
+  translate every passage that is not already in the target language and to
+  keep only target-language passages unchanged
+
 ## [0.17.0] - 2026-08-19
 
 ### Added

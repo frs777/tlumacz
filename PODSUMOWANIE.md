@@ -186,6 +186,7 @@ automatycznie (autofallback + `model_profiles`).
 | v0.15.0 | Wsparcie gemma-4-E4B: alias `local`, `--jinja`, `enable_thinking: false`, max_tokens 6000; fix nadpisywania config.json |
 | v0.16.0 | `preprocess.py` (ochrona kodu/URL, filtry linii regex, chunkowanie sekcjami), `server_chat_template` (chatml), czyszczenie EOS; testy 49 |
 | v0.17.0 | Odporność na modele (autofallback + `model_profiles`), `skip_patterns` w skillach, `SKILL_TEMPLATE.md` + „Nowy skilla", ekstrakcja PDF/DOCX/ODT/EPUB + 4 skille, „Przywróć domyślne" + backup, tooltipy i tabela parametrów w Pomocy; testy 79 |
+| v0.17.1 | Fix: tłumaczenie dokumentów dwujęzycznych (prompt jawnie nakazuje tłumaczyć wszystkie obcojęzyczne fragmenty); skalowanie okna do ekranu + scrollowane ustawienia; testy 80 |
 
 ## Plan (do_zrobienia.md)
 

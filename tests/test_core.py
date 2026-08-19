@@ -76,6 +76,14 @@ def test_default_prompt_is_language_generic():
     assert "already in German" in config.system_prompt
 
 
+def test_default_prompt_covers_multilingual_input():
+    config = TranslatorConfig(target_language="Polish")
+    prompt = config.system_prompt
+    assert "more than one language" in prompt
+    assert "Every sentence in another" in prompt
+    assert "must be translated" in prompt
+
+
 def test_custom_prompt_replaces_default_but_glossary_appended(tmp_path):
     glossary = tmp_path / "g.csv"
     glossary.write_text("Hello,Witaj\n", encoding="utf-8")

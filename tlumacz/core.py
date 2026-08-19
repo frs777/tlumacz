@@ -48,10 +48,14 @@ class TranslatorConfig:
         if base is None:
             base = (
                 "You are a professional technical translator. "
-                f"Translate the provided text into {self.target_language} "
-                "while preserving Markdown formatting. "
-                f"If the text is already in {self.target_language}, return it "
-                "unchanged without translating it again. "
+                "The text may be written in more than one language. "
+                f"Translate ALL passages that are not already in "
+                f"{self.target_language} into {self.target_language}, "
+                "preserving Markdown formatting. Every sentence in another "
+                "language (for example English, German, French) must be "
+                "translated - do not skip, omit, or leave any passage in its "
+                "original language. Passages that are already in "
+                f"{self.target_language} must be returned unchanged. "
                 "Respond directly with the translation only. Do not include "
                 "any thinking, reasoning, or commentary."
             )
@@ -133,8 +137,12 @@ class Translator:
                 {
                     "role": "user",
                     "content": (
-                        f"Translate the following text into {self.config.target_language}, "
-                        "preserving Markdown formatting:\n\n"
+                        f"Translate ALL passages of the following text that "
+                        f"are not already in {self.config.target_language} into "
+                        f"{self.config.target_language}, preserving Markdown "
+                        "formatting. Do not leave any passage in another "
+                        "language - every foreign-language sentence must be "
+                        "translated:\n\n"
                         f"{chunk}"
                     ),
                 },
