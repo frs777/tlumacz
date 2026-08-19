@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     instructions are appended to the translation system prompt
 - Config field: `enabled_skills` (list of skill names, validated)
 
+### Testing
+- Added `tests/` suite (33 tests) covering glossary parsing, config
+  validation, skill discovery/matching, the core translation engine
+  (chunking, prompts, cancellation) and offscreen GUI smoke tests; run with
+  `python3 -m pytest tests/`
+
 ## [0.10.0] - 2026-08-19
 
 ### Added
