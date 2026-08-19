@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-08-19
+
+### Added
+- Binary document support: `tlumacz/extract.py` extracts text from PDF
+  (`pdftotext`/poppler or `pypdf`), DOCX (`python-docx`), ODT and EPUB
+  (stdlib); `translate_file` auto-detects binary inputs, the result is saved
+  as Markdown; bundled skills `PDF`, `DOCX`, `ODT`, `EPUB`
+- Skill templates: bundled `SKILL_TEMPLATE.md` (excluded from discovery) and
+  a “Nowy skilla...” button copying it into `~/.config/tlumacz/skills/`
+  with a unique filename
+- `skip_patterns` in skill frontmatter — per-format skip regexes applied
+  automatically for the matching file type (the Markdown skill carries the
+  YAML-frontmatter patterns); the GUI regex field moved to an “Advanced”
+  row and patterns are combined with deduplication
+- Model resilience: `LlamaServer.start()` retries with fallback chat
+  templates (`chatml`, native jinja) when the configured one fails, and the
+  working template is remembered in `model_profiles` (keyed by GGUF path)
+  in `config.json`
+- “Przywróć domyślne” button: backs up `config.json` to
+  `config.backup-<timestamp>.json` and restores defaults while keeping
+  user paths; corrupt config files are also backed up before repair
+- Tooltips on all settings fields and a parameter table (what / how much /
+  why) in the Help tab (PL + EN), plus a section on converting the result
+  back to PDF/DOCX/ODT with external tools
+- Input file dialog now offers PDF/DOCX/ODT/EPUB; default output for binary
+  inputs is `name_<lang>.md`
+
+### Changed
+- Robust frontmatter parsing in `skill.py` (regex-based) — values containing
+  `---` (e.g. regex patterns) no longer break the parser
+
+## [0.16.0] - 2026-08-19
+
+### Added
+- `tlumacz/preprocess.py`: protection of code blocks/inline code/URLs with
+  `⟦PROT_n⟧` placeholders restored after translation; line filtering via
+  configurable regex skip patterns (YAML frontmatter kept verbatim);
+  section-aware chunking that splits at Markdown headings and groups small
+  sections instead of splitting mid-table
+- `server_chat_template` (Auto/jinja vs chatml): models with an unparseable
+  jinja template (e.g. `translategemma-4b`) are started with
+  `--no-jinja --chat-template chatml`
+- Stripping of leaked chat-template EOS tokens (`<|im_end|>`, `</s>`, ...)
+
+## [0.15.0] - 2026-08-19
+
+### Added
+- Managed-server support for thinking models: `SERVER_MODEL_ALIAS` (`local`),
+  `--jinja` and `--ctx-size 8192` in the server command, `enable_thinking:
+  false` via `chat_template_kwargs`, `max_tokens` 6000 (~5× faster for gemma)
+- Fixed config clobbering on window close (`_loading` guard + closeEvent guard)
+
 ## [0.14.0] - 2026-08-19
 
 ### Added

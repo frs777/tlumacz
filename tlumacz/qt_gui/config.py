@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -26,6 +28,7 @@ _INT_FIELDS = {"chunk_size", "server_port"}
 _FLOAT_FIELDS = {"temperature"}
 _BOOL_FIELDS = {"auto_start_server"}
 _LIST_FIELDS = {"enabled_skills", "skip_line_patterns"}
+_DICT_FIELDS = {"model_profiles"}
 
 
 def config_dir() -> Path:
@@ -56,6 +59,7 @@ class AppSettings:
     server_gguf_path: str = ""
     server_chat_template: str = ""
     auto_start_server: bool = False
+    model_profiles: dict[str, dict] = field(default_factory=dict)
     last_input: str = ""
     last_output: str = ""
 
@@ -98,6 +102,9 @@ def load_settings() -> tuple[AppSettings, Optional[str]]:
     Returns ``(settings, warning)`` where ``warning`` is ``None`` on a clean
     load (including a missing file, which is a normal first run) and a
     human-readable message otherwise.
+
+    When the file exists but has problems, a backup copy is kept before the
+    values are repaired in memory, so the original file is never lost.
     """
     path = config_dir() / "config.json"
     try:
@@ -106,6 +113,7 @@ def load_settings() -> tuple[AppSettings, Optional[str]]:
     except FileNotFoundError:
         return AppSettings(), None
     except (OSError, ValueError) as exc:
+        backup_config()
         return (
             AppSettings(),
             f"Nie można odczytać konfiguracji: {exc}. "
@@ -114,11 +122,46 @@ def load_settings() -> tuple[AppSettings, Optional[str]]:
 
     settings, problems = AppSettings.from_dict(data)
     if problems:
+        backup_config()
         return settings, (
             "Wykryto problemy w konfiguracji: " + "; ".join(problems)
             + " Użyto wartości domyślnych dla błędnych pól."
         )
     return settings, None
+
+
+def backup_config() -> Optional[Path]:
+    """Copy the current config.json to a timestamped backup file.
+
+    Returns the backup path, or ``None`` when there is nothing to back up.
+    """
+    path = config_dir() / "config.json"
+    if not path.is_file():
+        return None
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = path.with_name(f"config.backup-{stamp}.json")
+    try:
+        shutil.copy2(path, backup)
+        return backup
+    except OSError:
+        return None
+
+
+def reset_settings() -> tuple[AppSettings, Optional[Path]]:
+    """Restore default settings, preserving non-configuration fields.
+
+    The current file is first backed up (timestamped), then defaults are
+    written. Paths used by the user (``last_input``, ``last_output``,
+    ``glossary_path``) are kept so the user does not have to re-pick them.
+    """
+    backup = backup_config()
+    current = load_settings()[0]
+    defaults = AppSettings()
+    defaults.last_input = current.last_input
+    defaults.last_output = current.last_output
+    defaults.glossary_path = current.glossary_path
+    save_settings(defaults)
+    return defaults, backup
 
 
 def save_settings(settings: AppSettings) -> None:
@@ -142,5 +185,10 @@ def _valid_value(name: str, value: Any) -> bool:
     if name in _LIST_FIELDS:
         return isinstance(value, list) and all(
             isinstance(item, str) for item in value
+        )
+    if name in _DICT_FIELDS:
+        return isinstance(value, dict) and all(
+            isinstance(k, str) and isinstance(v, dict)
+            for k, v in value.items()
         )
     return isinstance(value, str)

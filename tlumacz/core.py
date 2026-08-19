@@ -9,10 +9,12 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional
 
 import openai
 
+from .extract import ExtractionError, extract_text, is_binary_format
 from .glossary import Glossary, MAX_PROMPT_ENTRIES
 from .preprocess import (
     DEFAULT_SKIP_PATTERNS,
@@ -180,27 +182,41 @@ class Translator:
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
 
-        with open(input_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
-        masked, protected = protect(text)
-        segments = split_segments(
-            masked,
-            self.config.chunk_size,
-            self.config.skip_line_patterns,
-        )
-        total = sum(1 for kind, _ in segments if kind == "translate")
-
         def log(msg: str) -> None:
             if log_callback is not None:
                 log_callback(msg)
 
+        if is_binary_format(input_path):
+            ext = Path(input_path).suffix.lower().lstrip(".")
+            log(f"Wyodrębnianie tekstu z pliku .{ext}...")
+            try:
+                text = extract_text(input_path)
+            except ExtractionError as exc:
+                raise ExtractionError(
+                    f"Nie można przetłumaczyć pliku .{ext}: {exc}"
+                ) from exc
+            if not text.strip():
+                raise ExtractionError(
+                    f"Plik .{ext} nie zawiera tekstu do przetłumaczenia."
+                )
+        else:
+            with open(input_path, "r", encoding="utf-8") as f:
+                text = f.read()
+
+        masked, protected = protect(text)
+        skill_text, skill_name, skill_patterns = text_for_file(
+            input_path, self.config.enabled_skills
+        )
+        segments = split_segments(
+            masked,
+            self.config.chunk_size,
+            self._effective_skip_patterns(skill_patterns),
+        )
+        total = sum(1 for kind, _ in segments if kind == "translate")
+
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
             log(f"Using glossary: {self.config.glossary_path}")
 
-        skill_text, skill_name = text_for_file(
-            input_path, self.config.enabled_skills
-        )
         if skill_name:
             log(f"Using skill: {skill_name}")
 
@@ -231,6 +247,19 @@ class Translator:
                     progress_callback(written, total)
 
         log(f"Translation saved to: {output_path}")
+
+    def _effective_skip_patterns(self, skill_patterns: tuple[str, ...]) -> list[str]:
+        """Combine skill patterns, defaults and the user's custom patterns.
+
+        The matched skill's patterns (or the generic defaults when the skill
+        does not define any) form the base; the user's ``skip_line_patterns``
+        are appended, deduplicated, so custom rules always win.
+        """
+        patterns = list(skill_patterns or DEFAULT_SKIP_PATTERNS)
+        for pattern in self.config.skip_line_patterns:
+            if pattern not in patterns:
+                patterns.append(pattern)
+        return patterns
 
 
 _EOS_TOKEN_RE = re.compile(r"(<\|im_end\|>|<\|end_of_turn\|>|<\|eot_id\|>|</s>)\s*$")

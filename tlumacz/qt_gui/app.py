@@ -15,7 +15,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from ..server import LlamaServer, ServerConfig, ServerStartError
-from .config import load_settings
+from .config import load_settings, save_settings
 from .main_window import MainWindow
 from .theme import apply_theme
 
@@ -27,15 +27,24 @@ def main() -> int:
 
     server: LlamaServer | None = None
     if settings.auto_start_server:
+        profile = settings.model_profiles.get(settings.server_gguf_path, {})
+        chat_template = settings.server_chat_template or profile.get(
+            "chat_template", ""
+        )
         server = LlamaServer(
             ServerConfig(
                 port=settings.server_port,
                 gguf_path=settings.server_gguf_path,
-                chat_template=settings.server_chat_template,
+                chat_template=chat_template,
             )
         )
         try:
-            server.start()
+            worked = server.start()
+            if worked and worked != settings.server_chat_template:
+                settings.model_profiles[settings.server_gguf_path] = {
+                    "chat_template": worked
+                }
+                save_settings(settings)
             atexit.register(server.stop)
         except ServerStartError as exc:
             print(f"Nie udało się uruchomić serwera: {exc}", file=sys.stderr)

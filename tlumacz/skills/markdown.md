@@ -1,6 +1,7 @@
 ---
 name: Markdown
 formats: md, markdown
+skip_patterns: ^\s*---\s*$, ^\s*(name|license|author|metadata|version|tags|created|updated)\s*:
 ---
 You are translating a Markdown document. Follow these rules:
 - Preserve the exact Markdown structure: headings, lists, emphasis, links,

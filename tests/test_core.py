@@ -11,6 +11,8 @@ from tlumacz.core import (
     TranslationCancelledError,
     _strip_eos_tokens,
 )
+from tlumacz.preprocess import DEFAULT_SKIP_PATTERNS
+from tlumacz.skill import save_skill
 
 
 def test_strip_eos_tokens():
@@ -138,3 +140,74 @@ def test_translate_file_missing_input(tmp_path):
         translator.translate_file(
             str(tmp_path / "nope.txt"), str(tmp_path / "out.txt")
         )
+
+
+def test_effective_skip_patterns_combines_skill_and_custom():
+    translator = Translator(TranslatorConfig(skip_line_patterns=[r"^CUSTOM$"]))
+    assert translator._effective_skip_patterns((r"^SKILL$",)) == [
+        r"^SKILL$",
+        r"^CUSTOM$",
+    ]
+
+
+def test_effective_skip_patterns_defaults_when_skill_empty():
+    translator = Translator(TranslatorConfig())
+    assert translator._effective_skip_patterns(()) == list(DEFAULT_SKIP_PATTERNS)
+
+
+def test_effective_skip_patterns_deduplicates():
+    translator = Translator(TranslatorConfig())
+    eff = translator._effective_skip_patterns(tuple(DEFAULT_SKIP_PATTERNS))
+    assert eff == list(DEFAULT_SKIP_PATTERNS)
+
+
+def test_translate_file_uses_skill_skip_patterns(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    save_skill("", "TestSkip", "md, markdown", "Instrukcje.", "^KEEP_ME$")
+    client, _ = _make_fake_client("PRZETŁUMACZONE")
+    config = TranslatorConfig(enabled_skills=["TestSkip"], chunk_size=200)
+    translator = Translator(config)
+    translator.client = client
+
+    source = tmp_path / "doc.md"
+    source.write_text("KEEP_ME\nNormalna linia.\n", encoding="utf-8")
+    output = tmp_path / "out.md"
+
+    logs: list[str] = []
+    translator.translate_file(str(source), str(output), log_callback=logs.append)
+
+    result = output.read_text(encoding="utf-8")
+    assert "KEEP_ME" in result
+    assert "PRZETŁUMACZONE" in result
+    assert any("skill: TestSkip" in line for line in logs)
+
+
+def test_translate_file_binary_odt_input(tmp_path):
+    import io
+    import zipfile
+
+    client, _ = _make_fake_client("PRZETŁUMACZONE")
+    config = TranslatorConfig(enabled_skills=["ODT"], chunk_size=200)
+    translator = Translator(config)
+    translator.client = client
+
+    xml = (
+        '<office:document-content xmlns:office='
+        '"urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text='
+        '"urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+        "<office:body><office:text>"
+        "<text:h>Nagłówek</text:h><text:p>Akapit.</text:p>"
+        "</office:text></office:body></office:document-content>"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("content.xml", xml)
+    source = tmp_path / "doc.odt"
+    source.write_bytes(buf.getvalue())
+    output = tmp_path / "out.md"
+
+    logs: list[str] = []
+    translator.translate_file(str(source), str(output), log_callback=logs.append)
+
+    assert any("odt" in line.lower() for line in logs)
+    assert output.read_text(encoding="utf-8") == "PRZETŁUMACZONE\n\n"

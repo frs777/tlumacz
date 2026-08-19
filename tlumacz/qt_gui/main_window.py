@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QDir, QSettings, Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -38,11 +41,24 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import TranslatorConfig
+from ..extract import BINARY_FORMATS
 from ..glossary import Glossary
 from ..preprocess import DEFAULT_SKIP_PATTERNS
 from ..server import SERVER_MODEL_ALIAS
-from ..skill import discover_skills, parse_skill, save_skill, user_skills_dir
-from .config import AppSettings, config_dir, load_settings, save_settings
+from ..skill import (
+    discover_skills,
+    new_skill_file,
+    parse_skill,
+    save_skill,
+    user_skills_dir,
+)
+from .config import (
+    AppSettings,
+    config_dir,
+    load_settings,
+    reset_settings,
+    save_settings,
+)
 from .theme import apply_theme
 from .worker import TranslationThread
 
@@ -95,7 +111,15 @@ class MainWindow(QMainWindow):
     def __init__(self, server: object | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Tłumacz")
-        self.resize(900, 720)
+        self.setMinimumSize(640, 480)
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            w = min(900, max(640, int(area.width() * 0.9)))
+            h = min(720, max(480, int(area.height() * 0.9)))
+            self.resize(w, h)
+        else:
+            self.resize(900, 720)
 
         self._settings, config_warning = load_settings()
         self._server = server
@@ -172,12 +196,33 @@ class MainWindow(QMainWindow):
 
         # --- Tab: Ustawienia --------------------------------------------------
         settings_tab = QWidget()
-        s_layout = QVBoxLayout(settings_tab)
+        s_outer = QVBoxLayout(settings_tab)
+        s_outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setObjectName("settingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        s_inner = QWidget()
+        s_layout = QVBoxLayout(s_inner)
+        s_layout.setContentsMargins(8, 8, 8, 8)
         s_layout.addWidget(self._build_settings_group())
         s_layout.addWidget(self._build_server_group())
         s_layout.addWidget(self._build_glossary_group())
         s_layout.addWidget(self._build_skills_group())
+        restore_row = QHBoxLayout()
+        self.restore_defaults_btn = QPushButton("Przywróć domyślne")
+        self.restore_defaults_btn.setObjectName("restoreDefaultsBtn")
+        self.restore_defaults_btn.clicked.connect(self._on_restore_defaults)
+        self.restore_defaults_btn.setToolTip(
+            "Zapisuje kopię obecnego config.json i przywraca domyślne ustawienia.\n"
+            "Twoje ścieżki (ostatni plik wejściowy/wyjściowy, glosariusz) są zachowywane."
+        )
+        restore_row.addWidget(self.restore_defaults_btn)
+        restore_row.addStretch(1)
+        s_layout.addLayout(restore_row)
         s_layout.addStretch(1)
+        scroll.setWidget(s_inner)
+        s_outer.addWidget(scroll)
         self.tabs.addTab(settings_tab, "Ustawienia")
 
         # --- Tab: Pomoc --------------------------------------------------------
@@ -218,6 +263,11 @@ class MainWindow(QMainWindow):
         self.glossary_path = QLineEdit()
         self.glossary_path.setObjectName("glossaryPath")
         self.glossary_path.setPlaceholderText("Ścieżka do pliku CSV (źródło,tłumaczenie)")
+        self.glossary_path.setToolTip(
+            "Plik CSV dwukolumnowy źródło,tłumaczenie.\n"
+            "Wpisy wymuszają stałe tłumaczenia dla wybranych terminów.\n"
+            "Nagłówek oraz prefiks # w tłumaczeniu są obsługiwane automatycznie."
+        )
         self.glossary_path.editingFinished.connect(self._on_glossary_path_edited)
         glossary_browse = QPushButton("Przeglądaj...")
         glossary_browse.clicked.connect(self._on_browse_glossary)
@@ -261,8 +311,12 @@ class MainWindow(QMainWindow):
         import_btn = QPushButton("Importuj skilla...")
         import_btn.setObjectName("importSkillBtn")
         import_btn.clicked.connect(self._on_import_skill)
+        new_btn = QPushButton("Nowy skilla...")
+        new_btn.setObjectName("newSkillBtn")
+        new_btn.clicked.connect(self._on_new_skill)
         button_row.addWidget(refresh_btn)
         button_row.addWidget(import_btn)
+        button_row.addWidget(new_btn)
         button_row.addStretch(1)
         layout.addLayout(button_row)
 
@@ -330,11 +384,34 @@ class MainWindow(QMainWindow):
             )
             return
         target = save_skill(
-            "", skill.name, ", ".join(skill.formats), skill.text
+            "",
+            skill.name,
+            ", ".join(skill.formats),
+            skill.text,
+            ", ".join(skill.skip_patterns),
         )
         self._reload_skills()
         save_settings(self._collect_settings())
         self._append_log(f"Zaimportowano skillę: {target}")
+
+    def _on_new_skill(self) -> None:
+        try:
+            target = new_skill_file()
+        except OSError as exc:
+            QMessageBox.critical(
+                self, "Skille", f"Nie można utworzyć skilla: {exc}"
+            )
+            return
+        self._reload_skills()
+        save_settings(self._collect_settings())
+        self._append_log(f"Utworzono nowy skilla: {target}")
+        QMessageBox.information(
+            self,
+            "Nowy skilla",
+            f"Utworzono plik szablonu:\n{target}\n\n"
+            "Edytuj go (nazwa, formaty, opcjonalnie skip_patterns), "
+            "zaznacz w listy i wciśnij „Odśwież”.",
+        )
 
     def _build_help_tab(self) -> QWidget:
         tab = QWidget()
@@ -369,8 +446,10 @@ class MainWindow(QMainWindow):
     def _help_text_pl(self) -> str:
         return """
 <h2>Tłumacz — pomoc</h2>
-<p>Tłumacz to narzędzie do tłumaczenia dokumentów (Markdown, TXT, HTML)
-za pomocą modeli LLM zgodnych z API OpenAI.</p>
+<p>Tłumacz to narzędzie do tłumaczenia dokumentów (Markdown, TXT, HTML,
+PDF, DOCX, ODT, EPUB) za pomocą modeli LLM zgodnych z API OpenAI.
+Formaty binarne są najpierw wyodrębniane do tekstu Markdown, a wynik
+zapisywany jako plik <code>.md</code>.</p>
 
 <h3>1. Konfiguracja modelu (zakładka „Ustawienia”)</h3>
 <ul>
@@ -405,8 +484,11 @@ przyciskiem „Dodaj wpis”.</p>
 <p>Instrukcje dla modelu dopasowane do formatu pliku (Markdown, TXT, HTML).
 Włącz skille, których używasz — instrukcje pasującego skilla zostaną
 wstrzyknięte do promptu podczas tłumaczenia. Własne skille możesz dodać
-jako pliki <code>.md</code> w <code>~/.config/tlumacz/skills/</code>
-(frontmatter: <code>name</code>, <code>formats</code>); skilla użytkownika
+przyciskiem <b>„Nowy skilla..."</b> (kopiuje szablon) albo jako pliki
+<code>.md</code> w <code>~/.config/tlumacz/skills/</code>.
+Frontmatter: <code>name</code> (nazwa), <code>formats</code>
+(rozszerzenia oddzielone przecinkiem), opcjonalnie <code>skip_patterns</code>
+(regexy linii nietłumaczonych dla tego formatu). Skilla użytkownika
 o tej samej nazwie zastępuje wbudowany.</p>
 
 <h3>5. Motyw</h3>
@@ -419,18 +501,90 @@ jasny lub ciemny.</p>
 <code>api_key</code>, <code>model</code>, <code>chunk_size</code>,
 <code>temperature</code>, <code>target_language</code>, <code>theme</code>,
 <code>glossary_path</code>, <code>system_prompt</code>,
-<code>enabled_skills</code>, <code>server_port</code>,
-<code>server_gguf_path</code>, <code>auto_start_server</code>,
-<code>last_input</code>, <code>last_output</code>.</p>
+<code>enabled_skills</code>, <code>skip_line_patterns</code>,
+<code>server_port</code>, <code>server_gguf_path</code>,
+<code>server_chat_template</code>, <code>auto_start_server</code>,
+<code>model_profiles</code>, <code>last_input</code>,
+<code>last_output</code>.</p>
 <p>Uszkodzony plik lub pola o błędnym typie są naprawiane wartościami
-domyślnymi, a program pokazuje stosowny komunikat.</p>
+domyślnymi, a program pokazuje stosowny komunikat. Przycisk
+„Przywróć domyślne" zapisuje kopię zapasową i wraca do ustawień
+domyślnych (zachowując ścieżki plików i glosariusza).</p>
+
+<h3>7. Tabela parametrów</h3>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Parametr</th><th>Co robi</th><th>Ile ustawić</th><th>Dlaczego</th></tr>
+<tr><td>Base URL</td><td>Adres serwera API zgodnego z OpenAI.</td>
+<td>np. <code>http://127.0.0.1:18080/v1</code></td>
+<td>Serwer musi być osiągalny i mówić po protokole OpenAI.</td></tr>
+<tr><td>API key</td><td>Token <code>Authorization: Bearer</code>.</td>
+<td><code>ollama</code> przy lokalnym serwerze</td>
+<td>Lokalne serwery ignorują klucz; zdalne wymagają prawdziwego.</td></tr>
+<tr><td>Model</td><td>Nazwa modelu na serwerze.</td>
+<td>np. <code>local</code> przy własnym serwerze</td>
+<td>Musi być dostępny na wskazanym serwerze.</td></tr>
+<tr><td>Rozmiar chunka</td><td>Wielkość fragmentu tekstu w jednym wywołaniu (znaki).</td>
+<td><b>4000–6000</b></td>
+<td>Mniejszy = lepszy kontekst sekcji, ale więcej wywołań;
+większy = mniej wywołań, ale ryzyko obcięcia i utraty spójności.</td></tr>
+<tr><td>Temperatura</td><td>Losowość odpowiedzi modelu.</td>
+<td><b>0.1–0.3</b></td>
+<td>Niska = wierne, deterministyczne tłumaczenie; wyższa = swobodny styl.</td></tr>
+<tr><td>Język docelowy</td><td>Język wyniku tłumaczenia.</td>
+<td>Twój język</td>
+<td>Tekst już w tym języku jest zwracany bez zmian.</td></tr>
+<tr><td>Własny prompt</td><td>Zamienia domyślny prompt tłumaczenia.</td>
+<td>opcjonalnie</td>
+<td>Styl, terminologia, ton; glosariusz i skille dodawane niezależnie.</td></tr>
+<tr><td>Pomijane linie (regex)</td><td>Linie, których nie tłumaczymy.</td>
+<td>puste (auto)</td>
+<td>Zaawansowane; zwykle niepotrzebne — wzorce pochodzą ze skilla formatu.</td></tr>
+<tr><td>Glosariusz</td><td>Plik CSV <code>źródło,tłumaczenie</code>.</td>
+<td>opcjonalnie</td>
+<td>Wymusza stałe tłumaczenia wybranych terminów.</td></tr>
+<tr><td>Skille</td><td>Instrukcje dla modelu per format pliku.</td>
+<td>zaznacz używane</td>
+<td>Automatyczne dopasowanie po rozszerzeniu pliku wejściowego.</td></tr>
+<tr><td>Port</td><td>Port serwera lokalnego.</td>
+<td>np. <b>18080</b></td>
+<td>Musi być wolny; różny od portów innych usług.</td></tr>
+<tr><td>Plik modelu (GGUF)</td><td>Model uruchamiany samodzielnie przez program.</td>
+<td>ścieżka do <code>.gguf</code></td>
+<td>Puste = używasz własnego serwera (Base URL).</td></tr>
+<tr><td>Szablon czatu</td><td>Sposób formatowania rozmowy z modelem.</td>
+<td>Auto (jinja), dla transl. gemma: chatml</td>
+<td>chatml rozwiązuje modele z uszkodzonym szablonem jinja.</td></tr>
+<tr><td>Motyw</td><td>Wygląd okna.</td>
+<td>system / jasny / ciemny</td>
+<td>Kwestia preferencji; „system" podąża za pulpitem.</td></tr>
+<tr><td>Auto-start serwera</td><td>Uruchamia llama.cpp razem z programem.</td>
+<td>włącz przy użyciu GGUF</td>
+<td>Wyłącz, gdy używasz własnego, już działającego serwera.</td></tr>
+</table>
+
+<h3>8. Konwersja wyniku (.md → PDF / DOCX / ODT)</h3>
+<p>Wynik tłumaczenia formatów binarnych jest zapisywany jako Markdown
+(<code>.md</code>). Aby przywrócić go do innego formatu, skorzystaj
+z zewnętrznych narzędzi:</p>
+<ul>
+<li><b>PDF</b> — otwórz plik <code>.md</code> w przeglądarce lub edytorze
+i użyj „Drukuj → Zapisz jako PDF".</li>
+<li><b>DOCX</b> — <a href="https://github.com/nihole/md2docx">md2docx</a>,
+<a href="https://github.com/timwis/markdown-to-google-doc">markdown-to-google-doc</a>,
+<a href="https://github.com/vace/markdown-docx">markdown-docx</a>.</li>
+<li><b>ODT</b> — <a href="https://github.com/abcBHM/MD2odt">MD2odt</a>,
+<a href="https://github.com/astrapi69/md-to-odt">md-to-odt</a>,
+<a href="https://github.com/sohooo/md2odt">md2odt</a>.</li>
+</ul>
 """
 
     def _help_text_en(self) -> str:
         return """
 <h2>Tłumacz — help</h2>
-<p>Tłumacz is a tool for translating documents (Markdown, TXT, HTML)
-using LLM models that speak the OpenAI-compatible API.</p>
+<p>Tłumacz is a tool for translating documents (Markdown, TXT, HTML,
+PDF, DOCX, ODT, EPUB) using LLM models that speak the OpenAI-compatible API.
+Binary formats are first extracted to Markdown text; the result is saved
+as a <code>.md</code> file.</p>
 
 <h3>1. Model setup (Settings tab)</h3>
 <ul>
@@ -464,8 +618,11 @@ Entries can also be added with the “Add entry” button.</p>
 <p>Model instructions matched to the file format (Markdown, TXT, HTML).
 Enable the skills you use — the instructions of a matching skill are
 injected into the prompt during translation. You can add your own skills
-as <code>.md</code> files in <code>~/.config/tlumacz/skills/</code>
-(frontmatter: <code>name</code>, <code>formats</code>); a user skill with
+with the <b>“New skill...”</b> button (copies a template) or as
+<code>.md</code> files in <code>~/.config/tlumacz/skills/</code>.
+Frontmatter: <code>name</code> (name), <code>formats</code>
+(extensions separated by commas), optionally <code>skip_patterns</code>
+(regexes of lines not to translate for this format). A user skill with
 the same name as a bundled one replaces it.</p>
 
 <h3>5. Theme</h3>
@@ -482,7 +639,73 @@ Fields: <code>base_url</code>, <code>api_key</code>, <code>model</code>,
 <code>auto_start_server</code>, <code>last_input</code>,
 <code>last_output</code>.</p>
 <p>A corrupt file or wrong-typed fields are repaired with defaults and the
-app shows a message about it.</p>
+app shows a message about it. The “Restore defaults” button saves a backup
+copy and returns to the default settings (keeping file and glossary paths).</p>
+
+<h3>7. Parameter table</h3>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Parameter</th><th>What it does</th><th>Recommended</th><th>Why</th></tr>
+<tr><td>Base URL</td><td>Address of an OpenAI-compatible server.</td>
+<td>e.g. <code>http://127.0.0.1:18080/v1</code></td>
+<td>The server must be reachable and speak the OpenAI protocol.</td></tr>
+<tr><td>API key</td><td><code>Authorization: Bearer</code> token.</td>
+<td><code>ollama</code> for local servers</td>
+<td>Local servers ignore the key; remote ones need a real one.</td></tr>
+<tr><td>Model</td><td>Model name available on the server.</td>
+<td>e.g. <code>local</code> with the managed server</td>
+<td>Must exist on the configured server.</td></tr>
+<tr><td>Chunk size</td><td>Size of the text fragment sent in one call (chars).</td>
+<td><b>4000–6000</b></td>
+<td>Smaller = better section context but more calls;
+larger = fewer calls but risk of truncation and lost coherence.</td></tr>
+<tr><td>Temperature</td><td>Response randomness.</td>
+<td><b>0.1–0.3</b></td>
+<td>Low = faithful, deterministic translation; higher = freer style.</td></tr>
+<tr><td>Target language</td><td>Output language of the translation.</td>
+<td>Your language</td>
+<td>Text already in this language is returned unchanged.</td></tr>
+<tr><td>Custom prompt</td><td>Replaces the default translation prompt.</td>
+<td>optional</td>
+<td>Style, terminology, tone; glossary and skills are added on top.</td></tr>
+<tr><td>Skip lines (regex)</td><td>Lines that are not translated.</td>
+<td>empty (auto)</td>
+<td>Advanced; usually unnecessary — patterns come from the format skill.</td></tr>
+<tr><td>Glossary</td><td>CSV file <code>source,translation</code>.</td>
+<td>optional</td>
+<td>Enforces fixed translations for chosen terms.</td></tr>
+<tr><td>Skills</td><td>Model instructions per file format.</td>
+<td>tick the ones you use</td>
+<td>Automatically matched by the input file extension.</td></tr>
+<tr><td>Port</td><td>Port of the local server.</td>
+<td>e.g. <b>18080</b></td>
+<td>Must be free and distinct from other services.</td></tr>
+<tr><td>Model file (GGUF)</td><td>Model started automatically by the app.</td>
+<td>path to a <code>.gguf</code></td>
+<td>Empty = you use your own server (Base URL).</td></tr>
+<tr><td>Chat template</td><td>How the conversation is formatted.</td>
+<td>Auto (jinja); chatml for transl. gemma</td>
+<td>chatml fixes models with a broken jinja template.</td></tr>
+<tr><td>Theme</td><td>Window appearance.</td>
+<td>system / light / dark</td>
+<td>Preference; “system” follows the desktop.</td></tr>
+<tr><td>Auto-start server</td><td>Starts llama.cpp together with the app.</td>
+<td>on when using a GGUF</td>
+<td>Turn off when using your own running server.</td></tr>
+</table>
+
+<h3>8. Converting the result (.md → PDF / DOCX / ODT)</h3>
+<p>Binary formats are translated to Markdown (<code>.md</code>). To get the
+result back into another format, use external tools:</p>
+<ul>
+<li><b>PDF</b> — open the <code>.md</code> file in a browser or editor and
+use “Print → Save as PDF”.</li>
+<li><b>DOCX</b> — <a href="https://github.com/nihole/md2docx">md2docx</a>,
+<a href="https://github.com/timwis/markdown-to-google-doc">markdown-to-google-doc</a>,
+<a href="https://github.com/vace/markdown-docx">markdown-docx</a>.</li>
+<li><b>ODT</b> — <a href="https://github.com/abcBHM/MD2odt">MD2odt</a>,
+<a href="https://github.com/astrapi69/md-to-odt">md-to-odt</a>,
+<a href="https://github.com/sohooo/md2odt">md2odt</a>.</li>
+</ul>
 """
 
     def _build_settings_group(self) -> QGroupBox:
@@ -491,24 +714,48 @@ app shows a message about it.</p>
 
         self.base_url = QLineEdit()
         self.base_url.setObjectName("baseUrl")
+        self.base_url.setToolTip(
+            "Adres serwera API zgodnego z OpenAI.\n"
+            "Dla lokalnego serwera: http://127.0.0.1:PORT/v1"
+        )
         self.api_key = QLineEdit()
         self.api_key.setObjectName("apiKey")
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key.setToolTip(
+            "Token uwierzytelniający (Authorization: Bearer).\n"
+            "Lokalne serwery (llama.cpp, ollama) zwykle go ignorują."
+        )
         self.model = QLineEdit()
         self.model.setObjectName("model")
+        self.model.setToolTip(
+            "Nazwa modelu dostępna na serwerze.\n"
+            "Przy uruchomionym serwerze lokalnym zawsze używany jest „local”."
+        )
         self.chunk_size = QSpinBox()
         self.chunk_size.setObjectName("chunkSize")
         self.chunk_size.setRange(500, 100_000)
         self.chunk_size.setSingleStep(500)
+        self.chunk_size.setToolTip(
+            "Wielkość fragmentu tekstu wysyłanego do modelu (w znakach).\n"
+            "Mniejszy = lepszy kontekst sekcji, ale więcej wywołań API.\n"
+            "Większy = mniej połączeń, ale ryzyko obcięcia/utraty spójności.\n"
+            "Zalecane: 4000–6000 dla tłumaczenia na CPU."
+        )
         self.temperature = QDoubleSpinBox()
         self.temperature.setObjectName("temperature")
         self.temperature.setRange(0.0, 2.0)
         self.temperature.setSingleStep(0.1)
         self.temperature.setDecimals(1)
+        self.temperature.setToolTip(
+            "Losowość odpowiedzi modelu.\n"
+            "0.1–0.3 = wierne, deterministyczne tłumaczenie (zalecane).\n"
+            "Wyższe wartości = bardziej swobodny styl."
+        )
         self.language = QComboBox()
         self.language.setObjectName("language")
         self.language.addItems(SUPPORTED_LANGUAGES)
         self.language.currentTextChanged.connect(self._on_language_changed)
+        self.language.setToolTip("Język, na który ma być tłumaczony tekst.")
 
         self.theme = QComboBox()
         self.theme.setObjectName("theme")
@@ -527,8 +774,14 @@ app shows a message about it.</p>
         self.skip_patterns_edit = QLineEdit()
         self.skip_patterns_edit.setObjectName("skipPatterns")
         self.skip_patterns_edit.setPlaceholderText(
-            "Regex rozdzielone przecinkiem; pasujące linie nie są tłumaczone "
-            "(np. metadane YAML). Puste = wartości domyślne."
+            "Opcjonalne: własne regexy oddzielone przecinkiem. "
+            "Puste = wzorce ze skilla dla danego formatu."
+        )
+        self.skip_patterns_edit.setToolTip(
+            "Zaawansowane: wyrażenia regularne (regex) opisujące linie, których\n"
+            "nie wolno tłumaczyć (np. metadane). Oddziel je przecinkami.\n"
+            "Puste = automatyczne wzorce ze skilla dla danego formatu.\n"
+            "Zwykle nie musisz nic tu wpisywać."
         )
 
         form.addRow("Base URL:", self.base_url)
@@ -539,7 +792,7 @@ app shows a message about it.</p>
         form.addRow("Język docelowy:", self.language)
         form.addRow("Motyw:", self.theme)
         form.addRow("Własny prompt:", self.prompt_edit)
-        form.addRow("Pomijane linie (regex):", self.skip_patterns_edit)
+        form.addRow("Zaawansowane — pomijane linie (regex):", self.skip_patterns_edit)
         return box
 
     def _build_server_group(self) -> QGroupBox:
@@ -550,12 +803,20 @@ app shows a message about it.</p>
         self.server_port.setObjectName("serverPort")
         self.server_port.setRange(1024, 65535)
         self.server_port.setSingleStep(100)
+        self.server_port.setToolTip(
+            "Port, na którym ma nasłuchiwać serwer lokalny.\n"
+            "Musi być wolny i różny od innych usług (np. 18080)."
+        )
 
         gguf_row = QHBoxLayout()
         self.server_gguf_path = QLineEdit()
         self.server_gguf_path.setObjectName("serverGgufPath")
         self.server_gguf_path.setPlaceholderText(
             "Ścieżka do pliku modelu .gguf (opcjonalnie)"
+        )
+        self.server_gguf_path.setToolTip(
+            "Ścieżka do pliku modelu .gguf uruchamianego samodzielnie.\n"
+            "Puste = korzystasz z własnego serwera (Base URL)."
         )
         gguf_browse = QPushButton("Przeglądaj...")
         gguf_browse.clicked.connect(self._on_browse_gguf)
@@ -566,11 +827,21 @@ app shows a message about it.</p>
             "Uruchamiaj serwer razem z programem"
         )
         self.auto_start_server.setObjectName("autoStartServer")
+        self.auto_start_server.setToolTip(
+            "Uruchom llama.cpp wraz z programem, gdy wskazano plik .gguf.\n"
+            "Odznacz, jeśli używasz własnego, już działającego serwera."
+        )
 
         self.server_chat_template = QComboBox()
         self.server_chat_template.setObjectName("serverChatTemplate")
         self.server_chat_template.addItem("Auto (jinja)", "")
         self.server_chat_template.addItem("chatml (modele transl. gemma)", "chatml")
+        self.server_chat_template.setToolTip(
+            "Szablon czatu używany przy starcie serwera.\n"
+            "Auto (jinja) = natywny szablon modelu — zwykle działa.\n"
+            "chatml = dla modeli, których szablon jinja jest nieprawidłowy\n"
+            "(np. translategemma). Jeśli model nie startuje, wybierz chatml."
+        )
 
         form.addRow("Port:", self.server_port)
         form.addRow("Plik modelu (GGUF):", gguf_row)
@@ -709,8 +980,11 @@ app shows a message about it.</p>
         path = self._browse_file(
             "Wybierz plik wejściowy",
             self.input_path.text(),
-            "Markdown (*.md *.markdown);;Tekst (*.txt *.text);;"
-            "HTML (*.html *.htm);;Wszystkie pliki (*)",
+            "Dokumenty (*.md *.markdown *.txt *.text *.html *.htm "
+            "*.pdf *.docx *.odt *.epub);;Markdown (*.md *.markdown);;"
+            "Tekst (*.txt *.text);;HTML (*.html *.htm);;"
+            "PDF (*.pdf);;Word (*.docx);;OpenDocument (*.odt);;"
+            "EPUB (*.epub);;Wszystkie pliki (*)",
         )
         if path:
             self.input_path.setText(path)
@@ -809,6 +1083,35 @@ app shows a message about it.</p>
         self.glossary_target.clear()
         self._on_glossary_path_edited()
         self._append_log(f"Glosariusz: dodano „{source} -> {target}” do {path}")
+
+    def _on_restore_defaults(self) -> None:
+        if self._thread is not None and self._thread.isRunning():
+            QMessageBox.warning(
+                self,
+                "Przywracanie",
+                "Tłumaczenie jest w toku. Poczekaj na jego zakończenie.",
+            )
+            return
+        reply = QMessageBox.question(
+            self,
+            "Przywróć domyślne",
+            "Przywrócić wszystkie ustawienia do wartości domyślnych?\n"
+            "Aktualny config.json zostanie zapisany jako kopia zapasowa.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        defaults, backup = reset_settings()
+        self._settings = defaults
+        self._loading = True
+        self._load_settings_into_ui()
+        self._loading = False
+        message = "Przywrócono ustawienia domyślne."
+        if backup:
+            message += f"\nKopia zapasowa: {backup}"
+        QMessageBox.information(self, "Przywróć domyślne", message)
+        self._append_log("Przywrócono ustawienia domyślne.")
 
     def _on_language_changed(self, _language: str) -> None:
         input_path = self.input_path.text().strip()
@@ -920,7 +1223,11 @@ def _default_output_path(input_path: str, language: str) -> str:
     """Return ``name_<suffix>.ext`` next to the input file.
 
     The suffix follows the selected target language (``pl``, ``en``, ...).
+    Binary formats (PDF, DOCX, ODT, EPUB) are translated to Markdown, so the
+    output extension is always ``.md``.
     """
     suffix = LANGUAGE_SUFFIXES.get(language, "pl")
     path = Path(input_path)
+    if path.suffix.lower().lstrip(".") in BINARY_FORMATS:
+        return str(path.with_name(f"{path.stem}_{suffix}.md"))
     return str(path.with_name(f"{path.stem}_{suffix}{path.suffix}"))

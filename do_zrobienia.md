@@ -29,20 +29,24 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       promptu gdy rozszerzenie pliku wejściowego pasuje do włączonego skilla.
       Własne skille użytkownika: `~/.config/tlumacz/skills/` (skilla
       użytkownika zastępuje wbudowany o tej samej nazwie).
-- [ ] **Przywracanie domyślnych opcji** — przycisk „Przywróć domyślne"
+- [x] **Przywracanie domyślnych opcji** — przycisk „Przywróć domyślne"
       w Ustawieniach: kopia aktualnego config.json do
       `config.backup-<data>.json`, potem zapis wartości domyślnych
       (z zachowaniem pól niekonfiguracyjnych: `last_input`, `last_output`,
       `glossary_path`). Przy naprawie uszkodzonego config.json zachować
       oryginał jako `.bak` (obecnie naprawa w miejscu gubi oryginał).
-- [ ] **Odporność na zmianę modelu** — obecnie zmiana modelu GGUF wymaga
-      zmian w kodzie (gemma → `--jinja` + `enable_thinking`, translategemma →
-      `chatml` + czyszczenie EOS). Plan: (a) autofallback startu serwera —
-      próba `--jinja`, w razie błędu parsowania szablonu retry z
-      `--no-jinja --chat-template chatml`; (b) profil modelu zapamiętywany
-      w config.json pod ścieżką GGUF (działające flagi używane automatycznie);
-      (c) detekcja przez próbę — mikro-zapytanie sprawdza wyciek tokenu EOS
-      i tryb „myślenia", parametry dostrajane samoczynnie.
+- [x] **Odporność na zmianę modelu** — zmiana modelu GGUF nie wymaga już
+      zmian w kodzie:
+  - [x] Autofallback startu serwera — próba `--jinja`, w razie błędu
+        (m.in. nieparsowalny szablon) automatyczny retry z
+        `--no-jinja --chat-template chatml`; kolejność prób zależna od
+        profilu i wyboru użytkownika.
+  - [x] Profil modelu zapamiętywany w config.json (`model_profiles`) pod
+        ścieżką GGUF — działający szablon używany automatycznie przy
+        kolejnym starcie.
+  - [ ] Detekcja przez próbę (mikro-zapytanie wykrywające wyciek tokenu
+        EOS / tryb „myślenia" z automatycznym dostrojeniem) — do zrobienia;
+        na razie czyszczenie EOS jest uniwersalne w `core.py`.
 
 ## Dokumentacja / pomoc
 
@@ -50,7 +54,7 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       i pola `config.json`, jak wybrać LLM (base_url, api_key, model), formaty
       obsługiwanych plików wejściowych (Markdown, TXT, HTML), serwer lokalny
       oraz regułę nazwy pliku wyjściowego. Przełączanie języka pomocy PL/EN.
-- [ ] **Szczegółowa pomoc dla każdej funkcji** — dwuwarstwowo: (a) tooltipy /
+- [x] **Szczegółowa pomoc dla każdej funkcji** — dwuwarstwowo: (a) tooltipy /
       dymki przy każdym polu („co to robi"), (b) rozbudowana tabela parametrów
       w zakładce Pomoc z kolumnami *co robi / ile ustawić / dlaczego* — np.
       chunk_size (mniejszy = lepszy kontekst sekcji, większy = mniej połączeń,
@@ -93,26 +97,29 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       GUI; wpisy stosowane podczas tłumaczenia.
 - [x] **Motyw (theme)** — przełączanie motywów **dzień / noc / system** z
       poziomu GUI.
-- [ ] **Wzorce pomijania per typ pliku** — obecnie `skip_line_patterns` to
-      globalna lista regexów dopasowana do YAML frontmatteru Markdown, zbyt
-      skomplikowana dla laika. Plan: (a) przenieść wzorce do skilla —
-      opcjonalne pole `skip_patterns` w frontmatterze skilla używane
-      automatycznie dla pasującego formatu; (b) uniwersalne „bezpieczne"
-      wzorce zawsze aktywne; (c) pole regex w GUI zostaje jako sekcja
-      „Zaawansowane (opcjonalnie)" dla zaawansowanych użytkowników.
-- [ ] **Szablon skilla dla użytkowników** — dołączony `SKILL_TEMPLATE.md`
-      z udokumentowanymi polami frontmatteru (`name`, `formats`, opcjonalnie
-      `skip_patterns`) i przykładem; przycisk „Nowy skilla" kopiujący szablon
-      do `~/.config/tlumacz/skills/`; dokumentacja w zakładce Pomoc.
-- [ ] **Wbudowane skille PDF / DOCX / ODT / EPUB** — nowy moduł
+- [x] **Wzorce pomijania per typ pliku** — `skip_line_patterns` w GUI to
+      już tylko sekcja „Zaawansowane": wzorce pochodzą ze skilla formatu
+      (opcjonalne pole `skip_patterns` w frontmatterze, użyte automatycznie
+      dla pasującego formatu), do tego uniwersalne bezpieczne wzorce
+      (`DEFAULT_SKIP_PATTERNS`) i ewentualne własne regexy użytkownika
+      (deduplikowane). Domyślny skilla Markdown niesie wzorce YAML.
+- [x] **Szablon skilla dla użytkowników** — wbudowany `SKILL_TEMPLATE.md`
+      (nie wykrywany jako skilla) z udokumentowanymi polami frontmatteru
+      (`name`, `formats`, opcjonalnie `skip_patterns`); przycisk
+      „Nowy skilla..." kopiuje szablon do `~/.config/tlumacz/skills/`
+      (unikalna nazwa); dokumentacja w zakładce Pomoc i w samym szablonie.
+- [x] **Wbudowane skille PDF / DOCX / ODT / EPUB** — nowy moduł
       `tlumacz/extract.py` do ekstrakcji tekstu: PDF (`pdftotext`/pypdf),
       DOCX (python-docx/docx2txt), ODT (zipfile + content.xml, stdlib),
       EPUB (zipfile + strip HTML, stdlib) + 4 skille z regułami tłumaczenia
       (wzorce z `skillmarketplace/PDF-Translator/.../en-cap-translator` oraz
-      `skillmarketplace/translate-doc`). Wyjście w 1. wersji jako Markdown
-      (bez round-tripu do formatów binarnych — osobny, większy etap; OCR dla
-      skanów również na później). Zależności opcjonalne z czytelnym komunikatem
-      gdy brakuje biblioteki.
+      `skillmarketplace/translate-doc`). Wyjście w 1. wersji jako Markdown.
+      **Round-trip (powrót do formatu binarnego) przez zewnętrzne narzędzia**
+      (decyzja): .md → PDF przez „Drukuj → Zapisz jako PDF";
+      .md → DOCX przez md2docx / markdown-to-google-doc / markdown-docx;
+      .md → ODT przez MD2odt / md-to-odt / md2odt — linki w zakładce Pomoc.
+      OCR dla skanów PDF na później. Zależności opcjonalne z czytelnym
+      komunikatem gdy brakuje biblioteki.
 
 ## Pakowanie / repo
 
