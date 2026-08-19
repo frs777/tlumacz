@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-19
+
+### Added
+- Config validation: `config.json` is checked on load for unknown fields and wrong-typed values; affected fields fall back to defaults and the GUI shows a warning dialog instead of silently ignoring the problem
+
+### Changed
+- `load_settings()` now returns `(settings, warning)`; `app.py` prints the warning to stderr, `main_window.py` surfaces it in a dialog
+
 ## [0.8.0] - 2026-08-19
 
 ### Changed

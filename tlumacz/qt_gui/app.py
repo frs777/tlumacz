@@ -21,7 +21,9 @@ from .theme import apply_theme
 
 
 def main() -> int:
-    settings = load_settings()
+    settings, config_warning = load_settings()
+    if config_warning:
+        print(f"UWAGA (konfiguracja): {config_warning}", file=sys.stderr)
 
     server: LlamaServer | None = None
     if settings.auto_start_server:

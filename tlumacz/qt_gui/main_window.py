@@ -94,13 +94,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Tłumacz")
         self.resize(900, 720)
 
-        self._settings = load_settings()
+        self._settings, config_warning = load_settings()
         self._server = server
         self._thread: TranslationThread | None = None
 
         self._build_ui()
         self._load_settings_into_ui()
         self._set_idle_state()
+        if config_warning:
+            QMessageBox.warning(self, "Konfiguracja", config_warning)
 
     # ------------------------------------------------------------------ UI --
 

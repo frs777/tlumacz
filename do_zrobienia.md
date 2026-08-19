@@ -20,7 +20,7 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       (`tlumacz/server.py`); brak jeszcze pól w GUI.
 - [ ] **Własny prompt użytkownika** — pole w ustawieniach na spersonalizowany
       prompt tłumaczenia (np. styl, terminologia, ton wypowiedzi).
-- [ ] **Walidacja config.json** — jeśli plik konfiguracji jest uszkodzony lub
+- [x] **Walidacja config.json** — jeśli plik konfiguracji jest uszkodzony lub
       zawiera nieznane pola, GUI powinno wrócić do wartości domyślnych z
       komunikatem zamiast cichego błędu.
 - [ ] **Wstrzykiwanie skilli** - Dodatkowe skille dotyczą tłumaczeń roznych formatów.
