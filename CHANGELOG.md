@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-08-19
+
+### Added
+- User skills: `*.md` files placed in `<config_dir>/skills/`
+  (e.g. `~/.config/tlumacz/skills/`) are discovered alongside the bundled
+  ones; a user skill with the same `name` overrides the bundled one
+- `save_skill()` helper to write a user skill file with `name`/`formats`
+  frontmatter into the user skills directory
+
+### Changed
+- Help tab documents how to add user skills
+- `discover_skills()` now merges bundled + user skills (user wins by name)
+
 ## [0.12.0] - 2026-08-19
 
 ### Changed

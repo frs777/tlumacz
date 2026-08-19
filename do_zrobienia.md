@@ -27,6 +27,8 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       formatów. Skille `.md` w pakiecie `tlumacz/skills/` (frontmatter:
       `name`, `formats`), wybór w GUI (grupa „Skille"), wstrzykiwane do
       promptu gdy rozszerzenie pliku wejściowego pasuje do włączonego skilla.
+      Własne skille użytkownika: `~/.config/tlumacz/skills/` (skilla
+      użytkownika zastępuje wbudowany o tej samej nazwie).
 
 ## Dokumentacja / pomoc
 

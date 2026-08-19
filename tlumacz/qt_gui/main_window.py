@@ -326,7 +326,10 @@ przyciskiem „Dodaj wpis”.</p>
 <h3>4. Skille</h3>
 <p>Instrukcje dla modelu dopasowane do formatu pliku (Markdown, TXT, HTML).
 Włącz skille, których używasz — instrukcje pasującego skilla zostaną
-wstrzyknięte do promptu podczas tłumaczenia.</p>
+wstrzyknięte do promptu podczas tłumaczenia. Własne skille możesz dodać
+jako pliki <code>.md</code> w <code>~/.config/tlumacz/skills/</code>
+(frontmatter: <code>name</code>, <code>formats</code>); skilla użytkownika
+o tej samej nazwie zastępuje wbudowany.</p>
 
 <h3>5. Motyw</h3>
 <p>Motyw „Systemowy” podąża za kolorem pulpitu; możesz też wymusić
@@ -382,7 +385,10 @@ Entries can also be added with the “Add entry” button.</p>
 <h3>4. Skills</h3>
 <p>Model instructions matched to the file format (Markdown, TXT, HTML).
 Enable the skills you use — the instructions of a matching skill are
-injected into the prompt during translation.</p>
+injected into the prompt during translation. You can add your own skills
+as <code>.md</code> files in <code>~/.config/tlumacz/skills/</code>
+(frontmatter: <code>name</code>, <code>formats</code>); a user skill with
+the same name as a bundled one replaces it.</p>
 
 <h3>5. Theme</h3>
 <p>“System” follows the desktop color scheme; you can force light or dark.</p>

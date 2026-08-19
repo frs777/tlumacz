@@ -1,6 +1,6 @@
 """Tests for bundled translation skill discovery and matching."""
 
-from tlumacz.skill import Skill, discover_skills, text_for_file
+from tlumacz.skill import Skill, discover_skills, save_skill, text_for_file
 
 
 def test_discover_finds_bundled_skills():
@@ -43,3 +43,33 @@ def test_parse_missing_frontmatter_fields():
     assert _parse_skill("bad.md", "---\nformats: md\n---\nbody") is None
     good = _parse_skill("ok.md", "---\nname: X\nformats: md, txt\n---\nbody text")
     assert good == Skill(name="X", formats=("md", "txt"), text="body text")
+
+
+def test_user_skill_loaded_from_config_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    save_skill("", "Mój skilla", "md, markdown", "Instrukcje.")
+    names = {s.name for s in discover_skills()}
+    assert "Mój skilla" in names
+
+
+def test_user_skill_overrides_bundled(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    save_skill("", "Markdown", "md, markdown", "USER OVERRIDE")
+    markdown = next(s for s in discover_skills() if s.name == "Markdown")
+    assert markdown.text.startswith("USER OVERRIDE")
+    text, name = text_for_file("x.md", ["Markdown"])
+    assert name == "Markdown"
+    assert text.startswith("USER OVERRIDE")
+
+
+def test_user_skill_ignored_without_formats(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    from tlumacz.skill import user_skills_dir
+
+    d = user_skills_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "no-formats.md").write_text(
+        "---\ndescription: bez formats\n---\nbody", encoding="utf-8"
+    )
+    names = {s.name for s in discover_skills()}
+    assert "no-formats" not in names
