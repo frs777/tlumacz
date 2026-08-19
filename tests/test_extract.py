@@ -1,5 +1,6 @@
 """Tests for binary document text extraction."""
 
+import subprocess
 import zipfile
 
 import pytest
@@ -94,6 +95,23 @@ def test_extract_docx_missing_deps(tmp_path, monkeypatch):
     path.write_bytes(b"PK\x03\x04not-a-docx")
     with pytest.raises(ExtractionError, match="python-docx"):
         extract_text(path)
+
+
+def test_extract_docx_pandoc_fallback(tmp_path, monkeypatch):
+    from tlumacz.extract import _extract_docx_fallback
+
+    fake = tmp_path / "fake-pandoc"
+
+    def _fake_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="# Nagłówek\n\nTreść akapitu.\n"
+        )
+
+    monkeypatch.setattr("tlumacz.extract.shutil.which", lambda _name: str(fake))
+    monkeypatch.setattr("tlumacz.extract.subprocess.run", _fake_run)
+    path = tmp_path / "doc.docx"
+    path.write_bytes(b"PK\x03\x04fake")
+    assert _extract_docx_fallback(path) == "# Nagłówek\n\nTreść akapitu."
 
 
 def test_extract_odt_corrupt_zip(tmp_path):

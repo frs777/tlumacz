@@ -187,6 +187,7 @@ automatycznie (autofallback + `model_profiles`).
 | v0.16.0 | `preprocess.py` (ochrona kodu/URL, filtry linii regex, chunkowanie sekcjami), `server_chat_template` (chatml), czyszczenie EOS; testy 49 |
 | v0.17.0 | Odporność na modele (autofallback + `model_profiles`), `skip_patterns` w skillach, `SKILL_TEMPLATE.md` + „Nowy skilla", ekstrakcja PDF/DOCX/ODT/EPUB + 4 skille, „Przywróć domyślne" + backup, tooltipy i tabela parametrów w Pomocy; testy 79 |
 | v0.17.1 | Fix: tłumaczenie dokumentów dwujęzycznych (prompt jawnie nakazuje tłumaczyć wszystkie obcojęzyczne fragmenty); skalowanie okna do ekranu + scrollowane ustawienia; testy 80 |
+| v0.17.2 | Fix: ekstrakcja DOCX bez python-docx (fallback pandoc, ostatecznie LibreOffice) — działa w venv bez instalowania pakietów; testy 81 |
 
 ## Plan (do_zrobienia.md)
 

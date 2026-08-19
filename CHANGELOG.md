@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.2] - 2026-08-19
+
+### Fixed
+- DOCX translation failed with "Ekstrakcja DOCX wymaga pakietu python-docx"
+  even after installing python-docx (venv isolation). DOCX extraction now
+  falls back to `pandoc` (docx -> Markdown) when `python-docx` is missing,
+  and to LibreOffice as a last resort, so `.docx` files translate without any
+  optional Python package installed
+
 ## [0.17.1] - 2026-08-19
 
 ### Fixed
