@@ -190,6 +190,69 @@ def test_translate_file_uses_skill_skip_patterns(tmp_path, monkeypatch):
     assert any("skill: TestSkip" in line for line in logs)
 
 
+def test_translate_file_binary_epub_roundtrip(tmp_path):
+    import io
+    import zipfile
+
+    def _identity_create(**kwargs):
+        calls.append(kwargs)
+        content = kwargs["messages"][-1]["content"]
+        choice = type("C", (), {"message": type("M", (), {"content": content})()})()
+        return type("R", (), {"choices": [choice]})()
+
+    calls: list[dict] = []
+    completions = type("Co", (), {"create": staticmethod(_identity_create)})()
+    chat = type("Ch", (), {"completions": completions})()
+    client = type("Cl", (), {"chat": chat, "calls": calls})()
+
+    html = (
+        "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Rozdział</title></head>"
+        "<body><h1>Rozdział 1</h1><p>To jest <b>tekst</b>.</p></body></html>"
+    )
+    opf = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+        '<metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Book</dc:title></metadata>'
+        '<manifest>'
+        '<item id="nav" href="content.xhtml" media-type="application/xhtml+xml"/>'
+        '<item id="img" href="cover.png" media-type="image/png"/>'
+        '</manifest>'
+        '<spine><itemref idref="nav"/></spine>'
+        '</package>'
+    )
+    container = (
+        '<?xml version="1.0"?>'
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+        'media-type="application/oebps-package+xml"/></rootfiles></container>'
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("mimetype", "application/epub+zip")
+        z.writestr("META-INF/container.xml", container)
+        z.writestr("OEBPS/content.opf", opf)
+        z.writestr("OEBPS/content.xhtml", html)
+        z.writestr("OEBPS/cover.png", b"\x89PNG-binary-cover")
+    source = tmp_path / "book.epub"
+    source.write_bytes(buf.getvalue())
+    output = tmp_path / "book_pl.epub"
+
+    translator = Translator(TranslatorConfig(enabled_skills=["HTML"]))
+    translator.client = client
+    translator.translate_file(str(source), str(output), log_callback=lambda _m: None)
+
+    with zipfile.ZipFile(output) as z:
+        names = z.namelist()
+        assert names[0] == "mimetype"
+        assert z.getinfo("mimetype").compress_type == zipfile.ZIP_STORED
+        assert z.read("OEBPS/cover.png") == b"\x89PNG-binary-cover"
+        assert "OEBPS/content.opf" in names
+        out_html = z.read("OEBPS/content.xhtml").decode("utf-8")
+
+    assert "<h1>Rozdział 1</h1>" in out_html
+    assert "To jest <b>tekst</b>." in out_html
+
+
 def test_translate_file_binary_odt_input(tmp_path):
     import io
     import zipfile

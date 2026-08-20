@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-08-20
+
+### Added
+- EPUB round-trip translation: each XHTML content file is fed through the
+  standard translation pipeline directly (no Markdown conversion), preserving
+  HTML tags/structure while translating only visible text. Non-content files
+  (CSS, images, fonts, OPF, NCX, mimetype, META-INF) are copied verbatim.
+- `extract_epub_structure()` reads EPUB files in OPF spine order (falls back
+  to sorted names) and `reconstruct_epub()` rebuilds the archive with
+  `mimetype` stored uncompressed first.
+
+### Fixed
+- `epub -> epub` translation produced invalid output because text nodes were
+  re-serialized with `xml.etree.ElementTree` (mangled `ns0:` prefixes, dropped
+  XML declaration) and fragments were matched back by splitting on `\n\n`
+  (fragile when the model merges/splits paragraphs). Replaced with a
+  per-file raw-XHTML translation that never re-serializes the document.
+
 ## [0.17.2] - 2026-08-19
 
 ### Fixed

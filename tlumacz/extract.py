@@ -261,3 +261,107 @@ def _html_to_text(raw: str) -> str:
     parser.feed(raw)
     parser.close()
     return parser.text()
+
+
+# ---------------------------------------------------------------------------
+# EPUB structure extraction and reconstruction (bez konwersji na Markdown)
+# ---------------------------------------------------------------------------
+
+_XHTML_SUFFIXES = (".xhtml", ".html", ".htm")
+
+
+def extract_epub_structure(path: str | Path) -> dict:
+    """Extract the raw content of an EPUB as a mapping of relative paths to bytes.
+
+    All files (XHTML, CSS, images, fonts, mimetype, META-INF, OPF, NCX) are
+    preserved verbatim. ``xhtml_paths`` lists the content files in their
+    logical reading order (derived from the OPF spine, falling back to a
+    sorted name order).
+
+    Returns:
+        dict with ``files`` (rel_path -> bytes) and ``xhtml_paths`` (list[str]).
+    """
+    try:
+        with zipfile.ZipFile(path) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise ExtractionError(f"Nie można otworzyć EPUB: {exc}") from exc
+
+    xhtml = [name for name in files if _is_xhtml(name)]
+    if not xhtml:
+        raise ExtractionError("W EPUB nie znaleziono plików treści.")
+
+    return {"files": files, "xhtml_paths": _epub_reading_order(files)}
+
+
+def _is_xhtml(name: str) -> bool:
+    return name.lower().endswith(_XHTML_SUFFIXES)
+
+
+def _epub_reading_order(files: dict[str, bytes]) -> list[str]:
+    """Return XHTML paths in OPF spine order; fall back to sorted names."""
+    xhtml = [name for name in files if _is_xhtml(name)]
+
+    def _resolve(opf_dir: str, href: str) -> str:
+        href = href.split("#", 1)[0]
+        from urllib.parse import unquote
+        href = unquote(href)
+        return f"{opf_dir}/{href}" if opf_dir else href
+
+    try:
+        container = ElementTree.fromstring(files["META-INF/container.xml"])
+        ns_c = "{urn:oasis:names:tc:opendocument:xmlns:container}"
+        rootfile = container.find(f".//{ns_c}rootfile")
+        if rootfile is None:
+            raise KeyError("rootfile")
+        opf_path = rootfile.get("full-path", "content.opf")
+        opf = ElementTree.fromstring(files[opf_path])
+        ns = "{http://www.idpf.org/2007/opf}"
+        manifest = {
+            item.get("id"): item.get("href")
+            for item in opf.findall(f".//{ns}manifest/{ns}item")
+        }
+        opf_dir = opf_path.rsplit("/", 1)[0] if "/" in opf_path else ""
+        order: list[str] = []
+        for ref in opf.findall(f".//{ns}spine/{ns}itemref"):
+            href = manifest.get(ref.get("idref"))
+            if href is None:
+                continue
+            rel = _resolve(opf_dir, href)
+            if rel in files and _is_xhtml(rel) and rel not in order:
+                order.append(rel)
+        if order:
+            remaining = sorted(name for name in xhtml if name not in order)
+            return order + remaining
+    except Exception:  # noqa: BLE001 - malformed OPF; fall back to sorted names
+        pass
+    return sorted(xhtml)
+
+
+def reconstruct_epub(
+    files: dict[str, bytes],
+    updates: dict[str, bytes],
+    output_path: str | Path,
+) -> None:
+    """Rebuild an EPUB from its raw files plus translated XHTML content.
+
+    Args:
+        files: rel_path -> bytes, as returned by :func:`extract_epub_structure`.
+        updates: rel_path -> bytes to overwrite in ``files`` (translated XHTML).
+        output_path: destination ``.epub`` path.
+    """
+    merged = dict(files)
+    merged.update(updates)
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        if "mimetype" in merged:
+            zout.writestr(
+                "mimetype", merged.pop("mimetype"), compress_type=zipfile.ZIP_STORED
+            )
+        for name in sorted(n for n in merged if n.startswith("META-INF/")):
+            zout.writestr(name, merged.pop(name))
+        for name, data in merged.items():
+            zout.writestr(name, data)

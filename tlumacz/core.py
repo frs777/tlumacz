@@ -14,7 +14,13 @@ from typing import Callable, Optional
 
 import openai
 
-from .extract import ExtractionError, extract_text, is_binary_format
+from .extract import (
+    ExtractionError,
+    extract_epub_structure,
+    extract_text,
+    is_binary_format,
+    reconstruct_epub,
+)
 from .glossary import Glossary, MAX_PROMPT_ENTRIES
 from .preprocess import (
     DEFAULT_SKIP_PATTERNS,
@@ -197,6 +203,14 @@ class Translator:
         if is_binary_format(input_path):
             ext = Path(input_path).suffix.lower().lstrip(".")
             log(f"Wyodrębnianie tekstu z pliku .{ext}...")
+            
+            # Specjalna ścieżka dla EPUB - bezpośrednio na XHTML, bez Markdowna
+            if ext == "epub":
+                return self._translate_epub_xhtml(
+                    input_path, output_path,
+                    progress_callback, log_callback, is_cancelled, log
+                )
+            
             try:
                 text = extract_text(input_path)
             except ExtractionError as exc:
@@ -255,6 +269,111 @@ class Translator:
                     progress_callback(written, total)
 
         log(f"Translation saved to: {output_path}")
+
+    def _translate_epub_xhtml(
+        self,
+        input_path: str,
+        output_path: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+        log: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """Translate an EPUB by processing each XHTML file and rebuilding it.
+
+        The raw XHTML of every content file is fed through the standard text
+        pipeline (protect -> split -> translate -> restore), so the HTML
+        structure and tags are preserved by the model while only the visible
+        text is translated. All non-content files (CSS, images, fonts, OPF,
+        NCX, mimetype, META-INF) are copied verbatim.
+        """
+        def _log(msg: str) -> None:
+            if log:
+                log(msg)
+
+        _log("Wyodrębnianie struktury z EPUB...")
+        try:
+            structure = extract_epub_structure(input_path)
+        except ExtractionError as exc:
+            raise ExtractionError(f"Nie można przetłumaczyć pliku EPUB: {exc}") from exc
+
+        files = structure["files"]
+        xhtml_paths = structure["xhtml_paths"]
+        _log(f"Znaleziono {len(xhtml_paths)} plik(ów) treści do przetłumaczenia.")
+
+        skill_text, skill_name, skill_patterns = text_for_file(
+            input_path, self.config.enabled_skills
+        )
+        if self.config.glossary_path and os.path.exists(self.config.glossary_path):
+            _log(f"Using glossary: {self.config.glossary_path}")
+        if skill_name:
+            _log(f"Using skill: {skill_name}")
+
+        updates: dict[str, bytes] = {}
+        for idx, rel in enumerate(xhtml_paths, start=1):
+            raw = files[rel].decode("utf-8", errors="replace")
+            _log(f"Tłumaczenie pliku {idx}/{len(xhtml_paths)}: {rel}")
+            translated_html = self._translate_text(
+                raw, skill_text, skill_patterns,
+                log=_log, progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+            updates[rel] = translated_html.encode("utf-8")
+
+        _log("Budowanie przetłumaczonego EPUB...")
+        try:
+            reconstruct_epub(files, updates, output_path)
+        except Exception as exc:  # noqa: BLE001
+            raise ExtractionError(f"Błąd przy budowaniu EPUB: {exc}") from exc
+        _log(f"Zapisano przetłumaczony EPUB: {output_path}")
+        return output_path
+
+    def _translate_text(
+        self,
+        text: str,
+        skill_text: str,
+        skill_patterns: tuple[str, ...],
+        *,
+        log: Callable[[str], None],
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> str:
+        """Run the protect -> split -> translate -> restore pipeline over ``text``.
+
+        Returns the fully translated text as a single string.
+        """
+        masked, protected = protect(text)
+        segments = split_segments(
+            masked,
+            self.config.chunk_size,
+            self._effective_skip_patterns(skill_patterns),
+        )
+        total = sum(1 for kind, _ in segments if kind == "translate")
+
+        if protected:
+            log(f"Protected {len(protected)} code/URL fragment(s)")
+        log(f"Processing {total} chunk(s)...")
+
+        parts: list[str] = []
+        written = 0
+        for kind, content in segments:
+            if is_cancelled is not None and is_cancelled():
+                log("Translation cancelled by user.")
+                raise TranslationCancelledError("Translation was cancelled.")
+
+            if kind == "keep":
+                parts.append(content + "\n")
+                continue
+
+            written += 1
+            log(f"Translating chunk {written}/{total}...")
+            translated = self._translate_chunk(content, skill_text)
+            parts.append(restore(translated, protected) + "\n\n")
+
+            if progress_callback is not None:
+                progress_callback(written, total)
+
+        return "".join(parts)
 
     def _effective_skip_patterns(self, skill_patterns: tuple[str, ...]) -> list[str]:
         """Combine skill patterns, defaults and the user's custom patterns.
