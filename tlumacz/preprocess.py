@@ -28,6 +28,7 @@ _PLACEHOLDER_RE = re.compile(r"⟦PROT_(\d+)⟧")
 _PROTECT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("fenced", re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)),
     ("inline", re.compile(r"`[^`\n]+`")),
+    ("tag", re.compile(r"<[^>]*>")),
     ("url", re.compile(r"https?://[^\s<>()]+")),
 ]
 
@@ -95,6 +96,45 @@ def is_skipped(line: str, compiled: Iterable[re.Pattern[str]]) -> bool:
 # --- Section-aware chunking ------------------------------------------------
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+")
+
+
+_PLACEHOLDER_SPLIT_RE = re.compile(r"(⟦PROT_\d+⟧)")
+
+
+def split_xml_segments(
+    text: str,
+    chunk_size: int,
+) -> list[tuple[str, str]]:
+    """Split XML/HTML text into translate segments without breaking placeholders.
+
+    Tag-protected regions (``⟦PROT_n⟧``) are atomic tokens: they are never cut
+    in half, so ``restore()`` can always put the original tags back. Plain text
+    runs are cut at ``chunk_size`` characters when needed. Returns a list of
+    ``("translate", content)`` tuples (XML is translated as a whole; there are
+    no ``keep`` lines).
+    """
+    tokens = _PLACEHOLDER_SPLIT_RE.split(text)
+    segments: list[tuple[str, str]] = []
+    current = ""
+
+    for token in tokens:
+        if not token:
+            continue
+        if len(token) > chunk_size:
+            if current:
+                segments.append(("translate", current))
+                current = ""
+            for i in range(0, len(token), chunk_size):
+                segments.append(("translate", token[i : i + chunk_size]))
+            continue
+        if current and len(current) + len(token) > chunk_size:
+            segments.append(("translate", current))
+            current = ""
+        current += token
+
+    if current:
+        segments.append(("translate", current))
+    return segments
 
 
 def split_segments(

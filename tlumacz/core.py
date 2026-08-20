@@ -17,9 +17,11 @@ import openai
 from .extract import (
     ExtractionError,
     extract_epub_structure,
+    extract_office_structure,
     extract_text,
     is_binary_format,
     reconstruct_epub,
+    reconstruct_zip,
 )
 from .glossary import Glossary, MAX_PROMPT_ENTRIES
 from .preprocess import (
@@ -27,6 +29,7 @@ from .preprocess import (
     protect,
     restore,
     split_segments,
+    split_xml_segments,
 )
 from .skill import text_for_file
 
@@ -210,6 +213,12 @@ class Translator:
                     input_path, output_path,
                     progress_callback, log_callback, is_cancelled, log
                 )
+            # DOCX/ODT: tłumacz XML wewnątrz archiwum, aby zachować format 1:1
+            if ext in ("docx", "odt"):
+                return self._translate_office_zip(
+                    input_path, output_path, ext,
+                    progress_callback, log_callback, is_cancelled, log
+                )
             
             try:
                 text = extract_text(input_path)
@@ -328,6 +337,190 @@ class Translator:
         _log(f"Zapisano przetłumaczony EPUB: {output_path}")
         return output_path
 
+    def _translate_office_zip(
+        self,
+        input_path: str,
+        output_path: str,
+        ext: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+        log: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """Translate a DOCX/ODT in place, preserving the original structure 1:1.
+
+        The archive is unpacked; every content XML file (word/document.xml,
+        headers/footers, content.xml, ...) has its text nodes translated in
+        place via :meth:`_translate_document_xml` — only the visible text is
+        sent to the model, the XML markup itself never is, so the document
+        structure, styles and tables survive exactly as they were. All other
+        files (styles, media, rels) are copied verbatim and the archive is
+        rebuilt.
+        """
+        label = "ODT" if ext == "odt" else "DOCX"
+
+        def _log(msg: str) -> None:
+            if log:
+                log(msg)
+
+        _log(f"Rozpakowywanie pliku .{ext}...")
+        try:
+            structure = extract_office_structure(input_path, ext)
+        except ExtractionError as exc:
+            raise ExtractionError(
+                f"Nie można przetłumaczyć pliku .{ext}: {exc}"
+            ) from exc
+
+        files = structure["files"]
+        content_paths = structure["content_paths"]
+        _log(
+            f"Znaleziono {len(content_paths)} plik(ów) treści do przetłumaczenia."
+        )
+
+        skill_text, skill_name, _ = text_for_file(
+            input_path, self.config.enabled_skills
+        )
+        if self.config.glossary_path and os.path.exists(self.config.glossary_path):
+            _log(f"Using glossary: {self.config.glossary_path}")
+        if skill_name:
+            _log(f"Using skill: {skill_name}")
+
+        updates: dict[str, bytes] = {}
+        for idx, rel in enumerate(content_paths, start=1):
+            raw = files[rel].decode("utf-8", errors="replace")
+            _log(f"Tłumaczenie pliku {idx}/{len(content_paths)}: {rel}")
+            translated = self._translate_document_xml(
+                raw, ext,
+                log=_log, progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+            updates[rel] = translated.encode("utf-8")
+
+        _log(f"Budowanie przetłumaczonego pliku {label}...")
+        try:
+            reconstruct_zip(files, updates, output_path)
+        except Exception as exc:  # noqa: BLE001
+            raise ExtractionError(f"Błąd przy budowaniu {label}: {exc}") from exc
+        _log(f"Zapisano przetłumaczony {label}: {output_path}")
+        return output_path
+
+    def _translate_document_xml(
+        self,
+        raw_xml: str,
+        ext: str,
+        *,
+        log: Callable[[str], None],
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> str:
+        """Translate the text of an XML document in place, markup untouched.
+
+        Only the ``.text`` of text-bearing nodes (``w:t`` for DOCX, ``text:*``
+        elements for ODT) is extracted, translated through the configured model,
+        and written back into the same tree. Because the markup is never sent
+        to the model, the structure, styles and empty elements are preserved
+        exactly — ideal for administrative documents.
+        """
+        import xml.etree.ElementTree as ET
+
+        if ext == "docx":
+            text_tag = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
+        else:
+            text_ns = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+
+        try:
+            root = ET.fromstring(raw_xml)
+        except ET.ParseError:
+            # Not well-formed XML; fall back to the generic text pipeline.
+            return self._translate_text(
+                raw_xml, "", [],
+                log=log, progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+
+        slots: list[tuple[object, str]] = []
+        for elem in root.iter():
+            if ext == "docx":
+                is_text = elem.tag == text_tag
+            else:
+                is_text = elem.tag.startswith(text_ns)
+            if is_text and elem.text and elem.text.strip():
+                slots.append((elem, "text"))
+
+        if not slots:
+            return raw_xml
+
+        # Keep the original XML declaration.
+        declaration = ""
+        if raw_xml.lstrip().startswith("<?xml"):
+            start = raw_xml.find("<?xml")
+            declaration = raw_xml[start : raw_xml.find("?>", start) + 2]
+
+        # Keep the original namespace prefixes (w:, text:, office:, ...).
+        orig_ns: list[tuple[str, str]] = [
+            (m.group(1) or "", m.group(2))
+            for m in re.finditer(r'xmlns(?::([a-zA-Z0-9_]+))?="([^"]+)"', raw_xml)
+        ]
+        for prefix, uri in orig_ns:
+            ET.register_namespace(prefix, uri)
+
+        slot_texts = [elem.text for elem, _ in slots]
+        total = 0
+        for idx, elem in enumerate(slots):
+            total += len(elem[0].text or "")
+
+        segments: list[list[int]] = []
+        current: list[int] = []
+        current_len = 0
+        for idx in range(len(slots)):
+            t = slots[idx][0].text or ""
+            if current and current_len + len(t) + 8 > self.config.chunk_size:
+                segments.append(current)
+                current, current_len = [], 0
+            current.append(idx)
+            current_len += len(t) + 8
+
+        if current:
+            segments.append(current)
+
+        for seg_idx, seg in enumerate(segments):
+            if is_cancelled is not None and is_cancelled():
+                log("Translation cancelled by user.")
+                raise TranslationCancelledError("Translation was cancelled.")
+            marker = "\n⟦S_%d⟧\n"
+            joined = marker.join(slots[i][0].text or "" for i in seg)
+            log(f"Tłumaczenie segmentu {seg_idx + 1}/{len(segments)}...")
+            translated = self._translate_chunk(joined, "")
+            parts = re.split(r"⟦S_\d+⟧", translated)
+            if len(parts) == len(seg) + 1:
+                for i, chunk_i in zip(seg, parts[1:]):
+                    slots[i][0].text = chunk_i
+            else:
+                # Model dropped/mangled separators: translate each node alone.
+                for i in seg:
+                    if is_cancelled is not None and is_cancelled():
+                        raise TranslationCancelledError(
+                            "Translation was cancelled."
+                        )
+                    slots[i][0].text = self._translate_chunk(slots[i][0].text or "", "")
+            if progress_callback is not None:
+                progress_callback(seg_idx + 1, len(segments))
+
+        body = ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+        # ET omits xmlns declarations that are unused by the tree; re-add the
+        # ones present in the original so the document stays structurally intact.
+        missing = []
+        for prefix, uri in orig_ns:
+            key = f'xmlns:{prefix}="' if prefix else 'xmlns="'
+            if key not in body:
+                missing.append(f' xmlns:{prefix}="{uri}"' if prefix else f' xmlns="{uri}"')
+        if missing:
+            root_open = body.find(">")
+            body = body[:root_open] + "".join(missing) + body[root_open:]
+
+        return declaration + body
+
     def _translate_text(
         self,
         text: str,
@@ -343,11 +536,17 @@ class Translator:
         Returns the fully translated text as a single string.
         """
         masked, protected = protect(text)
-        segments = split_segments(
-            masked,
-            self.config.chunk_size,
-            skip_patterns,
-        )
+        if not re.sub(r"⟦PROT_\d+⟧|\s", "", masked):
+            log("Brak tekstu do przetłumaczenia - kopiuję plik bez zmian.")
+            return text
+        if protected:
+            segments = split_xml_segments(masked, self.config.chunk_size)
+        else:
+            segments = split_segments(
+                masked,
+                self.config.chunk_size,
+                skip_patterns,
+            )
         total = sum(1 for kind, _ in segments if kind == "translate")
 
         if protected:

@@ -54,6 +54,30 @@ def _make_fake_client(content: str = "PRZETŁUMACZONE"):
     return client, calls
 
 
+def _make_roundtrip_client():
+    """Fake client that keeps ``⟦PROT_n⟧`` placeholders and translates the rest."""
+    import re
+
+    calls: list[dict] = []
+    ph_re = re.compile(r"⟦PROT_\d+⟧")
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        content = kwargs["messages"][-1]["content"]
+        parts = ph_re.split(content)
+        phs = ph_re.findall(content)
+        out = parts[0] if not parts[0].strip() else "PRZETŁUMACZONE"
+        for ph, part in zip(phs, parts[1:]):
+            out += ph + ("PRZETŁUMACZONE" if part.strip() else part)
+        choice = type("C", (), {"message": type("M", (), {"content": out})()})()
+        return type("R", (), {"choices": [choice]})()
+
+    completions = type("Co", (), {"create": staticmethod(create)})()
+    chat = type("Ch", (), {"completions": completions})()
+    client = type("Cl", (), {"chat": chat, "calls": calls})()
+    return client, calls
+
+
 def test_split_into_chunks():
     config = TranslatorConfig(chunk_size=20)
     translator = Translator(config)
@@ -259,7 +283,7 @@ def test_translate_file_binary_odt_input(tmp_path):
     import io
     import zipfile
 
-    client, _ = _make_fake_client("PRZETŁUMACZONE")
+    client, _ = _make_roundtrip_client()
     config = TranslatorConfig(enabled_skills=["ODT"], chunk_size=200)
     translator = Translator(config)
     translator.client = client
@@ -277,13 +301,51 @@ def test_translate_file_binary_odt_input(tmp_path):
         z.writestr("content.xml", xml)
     source = tmp_path / "doc.odt"
     source.write_bytes(buf.getvalue())
-    output = tmp_path / "out.md"
+    output = tmp_path / "out.odt"
 
     logs: list[str] = []
     translator.translate_file(str(source), str(output), log_callback=logs.append)
 
     assert any("odt" in line.lower() for line in logs)
-    assert output.read_text(encoding="utf-8") == "PRZETŁUMACZONE\n\n"
+    with zipfile.ZipFile(output, "r") as z:
+        out_xml = z.read("content.xml").decode("utf-8")
+    assert "<text:h>" in out_xml
+    assert "<text:p>" in out_xml
+    assert "PRZETŁUMACZONE" in out_xml
+
+
+def test_translate_file_binary_docx_roundtrip(tmp_path):
+    import io
+    import zipfile
+
+    client, _ = _make_roundtrip_client()
+    config = TranslatorConfig(enabled_skills=["DOCX"], chunk_size=200)
+    translator = Translator(config)
+    translator.client = client
+
+    doc_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+        'wordprocessingml/2006/main"><w:body>'
+        "<w:p><w:r><w:t>Treść do przetłumaczenia</w:t></w:r></w:p>"
+        "</w:body></w:document>"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", "<?xml version=\"1.0\"?><Types/>")
+        z.writestr("word/document.xml", doc_xml)
+    source = tmp_path / "doc.docx"
+    source.write_bytes(buf.getvalue())
+    output = tmp_path / "out.docx"
+
+    logs: list[str] = []
+    translator.translate_file(str(source), str(output), log_callback=logs.append)
+
+    assert any("docx" in line.lower() for line in logs)
+    with zipfile.ZipFile(output, "r") as z:
+        out_xml = z.read("word/document.xml").decode("utf-8")
+        assert z.read("[Content_Types].xml").decode("utf-8") == '<?xml version="1.0"?><Types/>'
+    assert "<w:t>PRZETŁUMACZONE</w:t>" in out_xml
 
 
 def test_translate_text_empty_skip_patterns_translates_yaml(tmp_path):

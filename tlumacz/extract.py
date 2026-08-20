@@ -304,3 +304,69 @@ def reconstruct_epub(
             zout.writestr(name, merged.pop(name))
         for name, data in merged.items():
             zout.writestr(name, data)
+
+
+# --------------------------------------------------------------- OFFICE (ODF/DOCX) --
+
+_DOCX_CONTENT_FILES = {
+    "word/document.xml",
+    "word/footnotes.xml",
+    "word/endnotes.xml",
+    "word/comments.xml",
+}
+
+
+def _is_docx_content(name: str) -> bool:
+    if name in _DOCX_CONTENT_FILES:
+        return True
+    base = name.rsplit("/", 1)[-1]
+    return base.startswith(("header", "footer")) and name.endswith(".xml")
+
+
+def extract_office_structure(path: str | Path, ext: str) -> dict:
+    """Extract the raw content of a DOCX/ODT archive for in-place translation.
+
+    Returns:
+        dict with ``files`` (rel_path -> bytes) and ``content_paths`` (list of
+        XML files whose text should be translated; the rest is copied verbatim).
+    """
+    label = "ODT" if ext == "odt" else "DOCX"
+    try:
+        with zipfile.ZipFile(path) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise ExtractionError(f"Nie można otworzyć {label}: {exc}") from exc
+
+    if ext == "odt":
+        content_paths = [name for name in files if name == "content.xml"]
+    else:
+        content_paths = sorted(name for name in files if _is_docx_content(name))
+
+    if not content_paths:
+        raise ExtractionError(
+            f"W pliku {label} nie znaleziono plików treści do przetłumaczenia."
+        )
+    return {"files": files, "content_paths": content_paths}
+
+
+def reconstruct_zip(
+    files: dict[str, bytes],
+    updates: dict[str, bytes],
+    output_path: str | Path,
+) -> None:
+    """Rebuild a ZIP-based document (DOCX/ODT) from raw files plus updates.
+
+    Args:
+        files: rel_path -> bytes, as returned by :func:`extract_office_structure`.
+        updates: rel_path -> bytes to overwrite in ``files`` (translated XML).
+        output_path: destination document path.
+    """
+    merged = dict(files)
+    merged.update(updates)
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, data in merged.items():
+            zout.writestr(name, data)

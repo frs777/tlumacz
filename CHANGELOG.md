@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-08-20
+
+### Added
+- **DOCX and ODT now round-trip to their original format** instead of
+  producing Markdown. The archive is unpacked and only the text inside XML
+  text nodes (`w:t` for DOCX, `text:*` for ODT) is sent to the model and
+  written back in place. The markup, styles, tables, empty elements and all
+  non-content files (media, rels, styles) are preserved verbatim — a faithful
+  1:1 result, essential for administrative documents. Namespace declarations
+  and the XML declaration are kept.
+
+### Changed
+- `protect()` now masks XML/HTML tags (`<...>`) before URLs, so tag markup
+  (including URLs inside attributes) is never sent to the model.
+- XML/HTML content is chunked by characters without ever splitting a
+  protected placeholder, instead of being split line-by-line (fixes dropped
+  tags in multi-line XML such as ODT `content.xml`).
+- Text-less XML files (e.g. empty `comments.xml`/`footnotes.xml`) are copied
+  verbatim instead of being sent to the model.
+
 ## [0.18.2] - 2026-08-20
 
 ### Changed
