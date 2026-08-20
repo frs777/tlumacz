@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-08-20
+
+### Fixed
+- EPUB translation skipped sections that looked like YAML frontmatter
+  (`---`, `name:`, `license:` lines). Config-level `skip_line_patterns` and the
+  generic defaults are no longer applied to EPUB: an EPUB is a book, so all
+  visible text is translated.
+- Chat-template control tokens leaked into the output: `_strip_eos_tokens`
+  now also removes `|<im_start|>` (and surrounding whitespace), not only the
+  trailing `|<im_end|>`/`</s>` tokens, so translated EPUB/HTML files stay clean.
+
 ## [0.18.0] - 2026-08-20
 
 ### Added

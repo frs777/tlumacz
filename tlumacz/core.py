@@ -301,7 +301,7 @@ class Translator:
         xhtml_paths = structure["xhtml_paths"]
         _log(f"Znaleziono {len(xhtml_paths)} plik(ów) treści do przetłumaczenia.")
 
-        skill_text, skill_name, skill_patterns = text_for_file(
+        skill_text, skill_name, _ = text_for_file(
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
@@ -314,7 +314,7 @@ class Translator:
             raw = files[rel].decode("utf-8", errors="replace")
             _log(f"Tłumaczenie pliku {idx}/{len(xhtml_paths)}: {rel}")
             translated_html = self._translate_text(
-                raw, skill_text, skill_patterns,
+                raw, skill_text, [],
                 log=_log, progress_callback=progress_callback,
                 is_cancelled=is_cancelled,
             )
@@ -332,7 +332,7 @@ class Translator:
         self,
         text: str,
         skill_text: str,
-        skill_patterns: tuple[str, ...],
+        skip_patterns: list[str],
         *,
         log: Callable[[str], None],
         progress_callback: Optional[Callable[[int, int], None]] = None,
@@ -346,7 +346,7 @@ class Translator:
         segments = split_segments(
             masked,
             self.config.chunk_size,
-            self._effective_skip_patterns(skill_patterns),
+            skip_patterns,
         )
         total = sum(1 for kind, _ in segments if kind == "translate")
 
@@ -390,13 +390,15 @@ class Translator:
 
 
 _EOS_TOKEN_RE = re.compile(r"(<\|im_end\|>|<\|end_of_turn\|>|<\|eot_id\|>|</s>)\s*$")
+_START_TOKEN_RE = re.compile(r"\s*<\|im_start\|>")
 
 
 def _strip_eos_tokens(content: str) -> str:
-    """Remove trailing chat-template end tokens leaked into the output.
+    """Remove chat-template control tokens leaked into the output.
 
-    Some models (e.g. chatml templates) emit their end-of-turn token at the
-    end of a response even though it is a control token. It is never part of
-    the translation and must not land in the output file.
+    Some models (e.g. chatml templates) emit their control tokens (``<|im_end|>``,
+    ``<|im_start|>``, ``</s>``, ...) at the end of a response even though they
+    are not part of the translation. They must not land in the output file.
     """
+    content = _START_TOKEN_RE.sub("", content)
     return _EOS_TOKEN_RE.sub("", content)

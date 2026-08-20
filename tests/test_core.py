@@ -21,6 +21,8 @@ def test_strip_eos_tokens():
     assert _strip_eos_tokens("Tekst.</s>") == "Tekst."
     assert _strip_eos_tokens("Tekst.") == "Tekst."
     assert _strip_eos_tokens("<|im_end|>") == ""
+    assert _strip_eos_tokens("</html>\n<|im_start|>\n\n") == "</html>\n\n"
+    assert _strip_eos_tokens("Treść.<|im_start|>reszta") == "Treść.reszta"
 
 
 class _FakeClient:
@@ -282,3 +284,31 @@ def test_translate_file_binary_odt_input(tmp_path):
 
     assert any("odt" in line.lower() for line in logs)
     assert output.read_text(encoding="utf-8") == "PRZETŁUMACZONE\n\n"
+
+
+def test_translate_text_empty_skip_patterns_translates_yaml(tmp_path):
+    """EPUB must translate everything: no config/YAML skip patterns applied."""
+
+    def _identity(**kwargs):
+        calls.append(kwargs)
+        content = kwargs["messages"][-1]["content"]
+        choice = type("C", (), {"message": type("M", (), {"content": content})()})()
+        return type("R", (), {"choices": [choice]})()
+
+    calls: list[dict] = []
+    completions = type("Co", (), {"create": staticmethod(_identity)})()
+    chat = type("Ch", (), {"completions": completions})()
+    translator = Translator(TranslatorConfig(chunk_size=100))
+    translator.client = type("Cl", (), {"chat": chat, "calls": calls})()
+
+    text = "---\nname: foo\nlicense: MIT\n---\ntreść do przetłumaczenia"
+    translator._translate_text(
+        text, "", [],
+        log=lambda _m: None,
+    )
+
+    sent = "\n".join(c["messages"][-1]["content"] for c in calls)
+    assert "name: foo" in sent
+    assert "license: MIT" in sent
+    assert "---" in sent
+    assert "treść do przetłumaczenia" in sent
