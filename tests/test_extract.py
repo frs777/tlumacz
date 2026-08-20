@@ -95,12 +95,12 @@ def test_extract_docx_missing_deps(tmp_path, monkeypatch):
     )
     path = tmp_path / "bad.docx"
     path.write_bytes(b"PK\x03\x04not-a-docx")
-    with pytest.raises(ExtractionError, match="python-docx"):
+    with pytest.raises(ExtractionError, match="pandoc"):
         extract_text(path)
 
 
-def test_extract_docx_pandoc_fallback(tmp_path, monkeypatch):
-    from tlumacz.extract import _extract_docx_fallback
+def test_extract_docx_uses_pandoc(tmp_path, monkeypatch):
+    from tlumacz.extract import _extract_docx
 
     fake = tmp_path / "fake-pandoc"
 
@@ -113,7 +113,7 @@ def test_extract_docx_pandoc_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr("tlumacz.extract.subprocess.run", _fake_run)
     path = tmp_path / "doc.docx"
     path.write_bytes(b"PK\x03\x04fake")
-    assert _extract_docx_fallback(path) == "# Nagłówek\n\nTreść akapitu."
+    assert _extract_docx(path) == "# Nagłówek\n\nTreść akapitu."
 
 
 def test_extract_odt_corrupt_zip(tmp_path):

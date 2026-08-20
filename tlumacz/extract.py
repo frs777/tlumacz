@@ -8,8 +8,7 @@ the original binary format is out of scope.
 Dependencies are optional and detected lazily:
 
 * PDF: the ``pdftotext`` tool (poppler) is preferred; otherwise ``pypdf``.
-* DOCX: the ``python-docx`` package (``import docx``); falls back to
-  ``pandoc`` (docx -> Markdown) and then LibreOffice when it is missing.
+* DOCX: the ``pandoc`` tool (docx -> Markdown).
 * ODT and EPUB: pure Python standard library (zipfile + XML/HTML parsing).
 
 This module is intentionally free of Qt dependencies.
@@ -20,7 +19,6 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import tempfile
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
@@ -91,85 +89,26 @@ def _extract_pdf(path: str | Path) -> str:
 # ------------------------------------------------------------------- DOCX --
 
 def _extract_docx(path: str | Path) -> str:
-    try:
-        from docx import Document
-        from docx.table import Table
-        from docx.text.paragraph import Paragraph
-    except ImportError:
-        return _extract_docx_fallback(path)
-
-    try:
-        doc = Document(str(path))
-        parts: list[str] = []
-        for child in doc.element.body.iterchildren():
-            tag = child.tag.rsplit("}", 1)[-1]
-            if tag == "p":
-                text = Paragraph(child, doc).text.strip()
-                if text:
-                    parts.append(text)
-            elif tag == "tbl":
-                table = Table(child, doc)
-                rows = [
-                    "| " + " | ".join(
-                        cell.text.replace("\n", " ").strip() for cell in row.cells
-                    ) + " |"
-                    for row in table.rows
-                ]
-                if rows:
-                    parts.append("\n".join(rows))
-        return "\n\n".join(parts)
-    except Exception as exc:  # noqa: BLE001
-        raise ExtractionError(f"Nie można odczytać DOCX: {exc}") from exc
-
-
-def _extract_docx_fallback(path: str | Path) -> str:
-    """Fallback DOCX extraction when python-docx is unavailable.
-
-    ``pandoc`` is preferred (fast, reliable docx -> Markdown); LibreOffice is
-    used only as a last resort.
-    """
+    """Extract DOCX text via pandoc (docx -> Markdown)."""
     pandoc = shutil.which("pandoc")
-    if pandoc is not None:
-        try:
-            result = subprocess.run(
-                [pandoc, str(path), "-t", "markdown"],
-                capture_output=True, text=True, check=False,
-            )
-        except OSError as exc:
-            raise ExtractionError(f"pandoc: {exc}") from exc
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+    if pandoc is None:
+        raise ExtractionError(
+            "Ekstrakcja DOCX wymaga narzędzia pandoc "
+            "(zainstaluj np. przez: pacman -S pandoc)."
+        )
+    try:
+        result = subprocess.run(
+            [pandoc, str(path), "-t", "markdown"],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError as exc:
+        raise ExtractionError(f"pandoc: {exc}") from exc
+    if result.returncode != 0 or not result.stdout.strip():
         raise ExtractionError(
             "pandoc nie przetworzył DOCX: "
             f"{result.stderr.strip() or result.returncode}"
         )
-
-    binary = shutil.which("libreoffice") or shutil.which("soffice")
-    if binary is None:
-        raise ExtractionError(
-            "Ekstrakcja DOCX wymaga pakietu 'python-docx' "
-            "(zainstaluj: pip install python-docx) albo narzędzia pandoc."
-        )
-    tmpdir = Path(tempfile.mkdtemp(prefix="tlumacz-docx-"))
-    try:
-        result = subprocess.run(
-            [binary, "--headless", "--convert-to", "txt:Text",
-             "--outdir", str(tmpdir), str(path)],
-            capture_output=True, text=True, check=False,
-        )
-        if result.returncode != 0:
-            raise ExtractionError(
-                "LibreOffice nie przetworzył DOCX: "
-                f"{result.stderr.strip() or result.returncode}"
-            )
-        txt = tmpdir / (Path(path).stem + ".txt")
-        if not txt.is_file():
-            raise ExtractionError("LibreOffice nie wygenerował tekstu z DOCX.")
-        return txt.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        raise ExtractionError(f"LibreOffice: {exc}") from exc
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    return result.stdout.strip()
 
 
 # -------------------------------------------------------------------- ODT --

@@ -17,7 +17,7 @@ depends=(
 )
 optdepends=(
     'python-pypdf: PDF extraction fallback (when poppler is missing)'
-    'python-docx: DOCX document extraction'
+    'pandoc: DOCX extraction (docx to Markdown)'
     'poppler: PDF extraction (pdftotext)'
 )
 makedepends=(
