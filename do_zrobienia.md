@@ -48,6 +48,15 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
         EOS / tryb „myślenia" z automatycznym dostrojeniem) — do zrobienia;
         na razie czyszczenie EOS jest uniwersalne w `core.py`.
 
+## Interfejs (GUI)
+
+- [ ] **Wskaźnik trwającej pracy** — obrotowe koło zębate / obracająca się
+      klepsydra (lub inny animowany spinner) pokazywane w GUI podczas
+      tłumaczenia, żeby użytkownik widział, że program działa.
+- [ ] **Licznik czasu tłumaczenia** — stoper, który startuje po wciśnięciu
+      przycisku *Tłumacz*, a zatrzymuje się po zakończeniu tłumaczenia
+      (czas trwania całego przebiegu, np. w status barze / obok paska postępu).
+
 ## Dokumentacja / pomoc
 
 - [x] **Krótka pomoc w GUI (PL + EN)** — zakładka „Pomoc” opisująca: format
@@ -89,6 +98,19 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
 
 ## Tłumaczenie
 
+- [ ] **Wydajność — zbyt wolno vs stary `tlumacz.py`** — dawny skrypt tłumaczył
+      nawet długi plik `.md` w max ~5 min. Obecnie jeden chunk potrafi trwać
+      bardzo długo (na CPU ~2.8 tok/s, a `max_tokens` sztywno 6000 → nawet
+      ~35 min/chunk). Dopasować `max_tokens` do `chunk_size` (np. proporcja
+      1.5–2× tokenów wejściowych) zamiast stałego 6000; zweryfikować realnie,
+      że długi plik wraca do ~5 min.
+- [ ] **Wbudowane skille rozpoznawane po rozszerzeniu** — wbudowane skille
+      (markdown, plaintext, html, pdf, docx, odt, epub) powinny być stosowane
+      **automatycznie** na podstawie rozszerzenia pliku wejściowego, bez
+      konieczności włączania ich w GUI (użytkownik zapomina przełączyć skilla).
+      W GUI zaznaczać/włączać można by tylko **dodatkowe / własne** skille
+      użytkownika.
+
 - [x] **Wykrywanie języka wejściowego** — automatyczne rozpoznawanie, czy tekst
       jest już w języku docelowym (żeby nie tłumaczyć po raz drugi) —
       realizowane przez wewnętrzny prompt.
@@ -110,16 +132,27 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
       (unikalna nazwa); dokumentacja w zakładce Pomoc i w samym szablonie.
 - [x] **Wbudowane skille PDF / DOCX / ODT / EPUB** — nowy moduł
       `tlumacz/extract.py` do ekstrakcji tekstu: PDF (`pdftotext`/pypdf),
-      DOCX (python-docx/docx2txt), ODT (zipfile + content.xml, stdlib),
-      EPUB (zipfile + strip HTML, stdlib) + 4 skille z regułami tłumaczenia
-      (wzorce z `skillmarketplace/PDF-Translator/.../en-cap-translator` oraz
-      `skillmarketplace/translate-doc`). Wyjście w 1. wersji jako Markdown.
-      **Round-trip (powrót do formatu binarnego) przez zewnętrzne narzędzia**
-      (decyzja): .md → PDF przez „Drukuj → Zapisz jako PDF";
-      .md → DOCX przez md2docx / markdown-to-google-doc / markdown-docx;
-      .md → ODT przez MD2odt / md-to-odt / md2odt — linki w zakładce Pomoc.
-      OCR dla skanów PDF na później. Zależności opcjonalne z czytelnym
-      komunikatem gdy brakuje biblioteki.
+      DOCX (pandoc), ODT (zipfile + content.xml, stdlib), EPUB (zipfile +
+      strip HTML, stdlib) + 4 skille z regułami tłumaczenia (wzorce z
+      `skillmarketplace/PDF-Translator/.../en-cap-translator` oraz
+      `skillmarketplace/translate-doc`).
+- [x] **Round-trip EPUB / DOCX / ODT (powrót do oryginalnego formatu, 1:1)** —
+      v0.18/0.19: archiwum jest rozpakowywane i tłumaczony jest tylko tekst
+      wewnątrz węzłów XML (`w:t` dla DOCX, `text:*` dla ODT, XHTML dla EPUB),
+      a cała struktura, style, tabele i pliki nietreściowe są kopiowane
+      bez zmian. Wynik ma to samo rozszerzenie co plik wejściowy.
+- [ ] **PDF round-trip** — przywrócenie przetłumaczonego `.md` do `.pdf`.
+      Dla plików tekstowych możliwe przez pandoc (z silnikiem PDF); pliki
+      skanowane wymagają OCR (patrz niżej). Wynik obecnie zapisywany jako
+      Markdown (`pdftotext`/pypdf).
+- [ ] **OCR dla skanów PDF i obrazów (Tesseract)** — gdy `pdftotext` zwróci
+      pusty tekst, uznać PDF za skan i przełączyć na OCR:
+      `pdftoppm -png -r 300` (poppler) każdą stronę → `tesseract -l <lang>`
+      → tekst. Rozszerzyć obsługę formatów o **obrazy** (png/jpg/webp/bmp)
+      tłumaczone przez OCR do `.md`. Tesseract jako zależność opcjonalna
+      (wykrywanie lazy), dokumentacja + link do plików językowych
+      (https://github.com/tesseract-ocr/tessdata); język OCR z `default_lang`.
+      Koncepcja jak w Crow Translate (OCR zrzutów ekranu), tu dla plików/skanów.
 
 ## Pakowanie / repo
 

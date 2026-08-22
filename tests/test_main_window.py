@@ -99,3 +99,34 @@ def test_refresh_skills_picks_up_new_user_skill(qapp, config_home):
     assert warning is None
     assert settings.enabled_skills == window._enabled_skill_names()
     window.close()
+
+
+def test_translation_activity_indicators(qapp):
+    from tlumacz.qt_gui.main_window import MainWindow
+
+    window = MainWindow(server=None)
+    window._set_running_state()
+    assert not window.spinner_label.isHidden()
+    assert window._spinner_timer.isActive()
+    assert window._elapsed_display_timer.isActive()
+    assert window.elapsed_label.text() == "Czas: 00:00"
+
+    first = window.spinner_label.text()
+    window._advance_spinner()
+    assert window.spinner_label.text() != first
+
+    window._set_idle_state()
+    assert window.spinner_label.isHidden()
+    assert not window._spinner_timer.isActive()
+    assert not window._elapsed_display_timer.isActive()
+    window.close()
+
+
+def test_elapsed_time_format(qapp):
+    from tlumacz.qt_gui.main_window import MainWindow
+
+    window = MainWindow(server=None)
+    assert window._format_elapsed(0) == "Czas: 00:00"
+    assert window._format_elapsed(65_000) == "Czas: 01:05"
+    assert window._format_elapsed(3_725_000) == "Czas: 01:02:05"
+    window.close()

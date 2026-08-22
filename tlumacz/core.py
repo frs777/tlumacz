@@ -33,6 +33,8 @@ from .preprocess import (
 )
 from .skill import text_for_file
 
+MAX_NODES_PER_SEGMENT = 25
+
 
 @dataclass
 class TranslatorConfig:
@@ -57,33 +59,48 @@ class TranslatorConfig:
         if base is None:
             base = (
                 "You are a professional technical translator. "
-                "The text may be written in more than one language. "
-                f"Translate ALL passages that are not already in "
+                f"Translate all passages that are not already in "
                 f"{self.target_language} into {self.target_language}, "
-                "preserving Markdown formatting. Every sentence in another "
-                "language (for example English, German, French) must be "
-                "translated - do not skip, omit, or leave any passage in its "
-                "original language. Passages that are already in "
-                f"{self.target_language} must be returned unchanged. "
-                "Respond directly with the translation only. Do not include "
-                "any thinking, reasoning, or commentary."
+                "preserving Markdown formatting and structure. "
+                "Every passage in another language must be translated; "
+                "do not skip, omit, or leave any passage untranslated. "
+                "Respond directly with the translation only."
             )
-        glossary_text = self._load_glossary_text()
-        if glossary_text:
-            base = base.rstrip() + "\n\n" + glossary_text
         self.system_prompt = base
+        self._glossary: Glossary | None = None
+        if self.glossary_path:
+            try:
+                self._glossary = Glossary.from_csv(
+                    self.glossary_path, max_entries=MAX_PROMPT_ENTRIES
+                )
+            except OSError:
+                self._glossary = None
 
-    def _load_glossary_text(self) -> str:
-        """Return the glossary prompt fragment, or ``""`` when not usable."""
-        if not self.glossary_path:
+    def _glossary_prompt_for(self, source_text: str) -> str:
+        """Return glossary terms that actually occur in ``source_text``.
+
+        Filtering keeps the prompt small and prevents small models from
+        echoing the whole glossary list instead of translating the source.
+        """
+        glossary = self._glossary
+        if glossary is None or not source_text:
             return ""
-        try:
-            glossary = Glossary.from_csv(
-                self.glossary_path, max_entries=MAX_PROMPT_ENTRIES
-            )
-            return glossary.to_prompt()
-        except OSError:
+        lower = source_text.casefold()
+        pairs = [
+            (source, target)
+            for source, target in glossary.entries
+            if source.casefold() != target.casefold()
+            and source.casefold() in lower
+        ][:MAX_PROMPT_ENTRIES]
+        if not pairs:
             return ""
+        lines = [f"- {source} => {target}" for source, target in pairs]
+        return (
+            "Use the following glossary terms exactly, do not translate them "
+            "differently. Apply them ONLY to words that actually appear in "
+            "the source text; never output the glossary list itself:\n"
+            + "\n".join(lines)
+        )
 
 
 class TranslationCancelledError(Exception):
@@ -137,6 +154,9 @@ class Translator:
     def _translate_chunk(self, chunk: str, skill_text: str = "") -> str:
         """Translate a single chunk via the configured API."""
         system = self.config.system_prompt
+        glossary_text = self.config._glossary_prompt_for(chunk)
+        if glossary_text:
+            system = system.rstrip() + "\n\n" + glossary_text
         if skill_text:
             system = system.rstrip() + "\n\n" + skill_text
         request_kwargs: dict = {
@@ -146,18 +166,20 @@ class Translator:
                 {
                     "role": "user",
                     "content": (
-                        f"Translate ALL passages of the following text that "
-                        f"are not already in {self.config.target_language} into "
-                        f"{self.config.target_language}, preserving Markdown "
-                        "formatting. Do not leave any passage in another "
-                        "language - every foreign-language sentence must be "
-                        "translated:\n\n"
-                        f"{chunk}"
+                        f"Translate into {self.config.target_language}. "
+                        f"Output only the translation. "
+                        f"Translate EVERY passage, including YAML frontmatter "
+                        f"description values and other prose metadata; do not "
+                        f"treat indented or label lines as code to preserve. "
+                        f"Only actual code, URLs, file names and identifiers "
+                        f"stay unchanged. "
+                        f"Never output the glossary list or any term-to-"
+                        f"translation pairs.\n\n{chunk}"
                     ),
                 },
             ],
             "temperature": self.config.temperature,
-            "max_tokens": 6000,
+            "max_tokens": max(512, min(4096, self.config.chunk_size)),
         }
         if self.config.chat_template_kwargs:
             request_kwargs["extra_body"] = {
@@ -474,7 +496,10 @@ class Translator:
         current_len = 0
         for idx in range(len(slots)):
             t = slots[idx][0].text or ""
-            if current and current_len + len(t) + 8 > self.config.chunk_size:
+            too_many = len(current) >= MAX_NODES_PER_SEGMENT
+            if current and (
+                too_many or current_len + len(t) + 8 > self.config.chunk_size
+            ):
                 segments.append(current)
                 current, current_len = [], 0
             current.append(idx)

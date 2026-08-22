@@ -3,7 +3,7 @@
 #   replace source with: https://github.com/frs777/tlumacz/archive/v$pkgver.tar.gz
 
 pkgname=tlumacz
-pkgver=0.17.1
+pkgver=0.19.0
 pkgrel=1
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')
@@ -25,7 +25,7 @@ makedepends=(
     'python-installer'
 )
 source=("tlumacz-$pkgver.tar.gz")
-b2sums=('3ade7014992dca756c9d6be7f4de347ab767d0fc1c290a34b0d69fc3b058b73614e8e39d8c202fa8376024e9e964bfb1ff0e338a9e770f0b04efdeadf8d68fe1')
+b2sums=('004070169cf19ac1f7301a5c4bf08f45ba7cf08a2d7730bc0580ab1c8daf74ad168bb89ce1178f7b741abeb0ae6624b8181dcdfb51990c4ef50cf4bb103d9cb2')
 
 build() {
     cd "$pkgname-$pkgver"

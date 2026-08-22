@@ -1,8 +1,8 @@
 # Podsumowanie projektu — Tłumacz
 
-**Data:** 19 sierpnia 2026
+**Data:** 20 sierpnia 2026
 **Repozytorium:** https://github.com/frs777/tlumacz (publiczne)
-**Wersja:** 0.16.0
+**Wersja:** 0.19.0
 **Paczka w moje-repo:** `tlumacz-0.5.1-1-any` (Arch, `/home/frs/RepoArch/x86_64`) — do odświeżenia
 
 ---
@@ -45,9 +45,11 @@ serwer lokalny `llama-server` (GGUF).
 - Wyłączanie trybu „myślenia” modelu: `chat_template_kwargs` z
   `enable_thinking: false` + max_tokens 6000 (v0.15.0, ~5× szybciej dla gemma)
 
-### Preprocessing tłumaczenia (v0.16.0 → v0.17.0, `tlumacz/preprocess.py`)
-- **Ochrona kodu/URL** — bloki ```, `` inline i URL-e maskowane placeholderami
-  `⟦PROT_n⟧` i przywracane po tłumaczeniu (techniczny content zostaje 1:1)
+### Preprocessing tłumaczenia (v0.16.0 → v0.19.0, `tlumacz/preprocess.py`)
+- **Ochrona kodu/URL/tagów** — bloki ```, `` inline, URL-e oraz tagi
+  XML/HTML (`<...>`) maskowane placeholderami `⟦PROT_n⟧` i przywracane po
+  tłumaczeniu (techniczny content i znaczniki zostają 1:1); tagi chronione
+  przed URL-ami, więc URL-e wewnątrz atrybutów XML też są bezpieczne
 - **Filtrowanie linii** — linie pasujące do wzorców regex (YAML-metadane:
   `license:`, `author:`, `version:` itd.) kopiowane do wyniku bez tłumaczenia
 - **Wzorce per skilla** (v0.17.0): opcjonalne pole `skip_patterns` we
@@ -57,18 +59,25 @@ serwer lokalny `llama-server` (GGUF).
 - **Chunkowanie sekcjami** — tekst dzielony przy nagłówkach Markdown zamiast
   w połowie tabel; małe sekcje grupują się w jeden fragment, split tylko przy
   przepełnieniu (`chunk_size`) lub nagłówku po dużej sekcji
-- Czyszczenie przeciekających tokenów końca szablonu (`<|im_end|>`, `</s>`...)
+- **Chunkowanie XML po znakach** (`split_xml_segments`, v0.19.0) — dla
+  XML/HTML tekst dzielony po znakach bez rozcinania placeholderów `⟦PROT_n⟧`
+  (naprawia gubienie tagów w wieloliniowym XML, np. ODT `content.xml`)
+- Czyszczenie przeciekających tokenów końca/startu szablonu (`<|im_end|>`,
+  `<|im_start|>`, `</s>`...)
 
-### Ekstrakcja formatów binarnych (v0.17.0, `tlumacz/extract.py`)
-- PDF (narzędzie `pdftotext`/poppler, fallback: `pypdf`), DOCX
-  (`python-docx`, akapity + tabele), ODT (stdlib: zipfile + XML), EPUB
-  (stdlib: zipfile + strip HTML) → tekst w stylu Markdown
+### Ekstrakcja formatów binarnych (v0.17.0 → v0.19.0, `tlumacz/extract.py`)
+- PDF (narzędzie `pdftotext`/poppler, fallback: `pypdf`), DOCX (**pandoc**),
+  ODT (stdlib: zipfile + XML), EPUB (stdlib: zipfile + strip HTML)
 - Zależności opcjonalne — czytelny komunikat o braku biblioteki
-- `translate_file` automatycznie wyodrębnia tekst przed tłumaczeniem;
-  wynik zawsze zapisywany jako Markdown (`.md`); **powrót do formatu
-  binarnego przez zewnętrzne narzędzia**: .md → PDF „Drukuj → Zapisz jako PDF",
-  .md → DOCX (md2docx / markdown-to-google-doc / markdown-docx), .md → ODT
-  (MD2odt / md-to-odt / md2odt) — linki w zakładce Pomoc
+- **Round-trip EPUB / DOCX / ODT (v0.18/0.19)** — wynik w oryginalnym formacie
+  1:1: archiwum rozpakowywane, tłumaczony tylko tekst wewnątrz węzłów XML
+  (`w:t` dla DOCX, `text:*` dla ODT, XHTML dla EPUB); struktura, style,
+  tabele, deklaracja XML i wszystkie `xmlns` oraz pliki nietreściowe (media,
+  rels, styles) zachowane bez zmian. Pliki bez tekstu (puste `comments.xml`)
+  kopiowane bez wysyłki do modelu.
+- **PDF** — jako dokument trudny do odtworzenia 1:1: tekst wyodrębniany
+  (`pdftotext`/pypdf), wynik zapisywany jako Markdown (`.md`); powrót do
+  PDF przez „Drukuj → Zapisz jako PDF". **OCR dla skanów (Tesseract) w planie.**
 
 ### Glosariusz / słownik (v0.7.0)
 - `tlumacz/glossary.py` — CSV dwie kolumny, detekcja nagłówka, `#`-prefixy,
@@ -93,14 +102,17 @@ serwer lokalny `llama-server` (GGUF).
   ścieżek (`last_input`, `last_output`, `glossary_path`); uszkodzony
   config.json też jest najpierw backupowany
 - **Tooltipy przy wszystkich polach** oraz **tabela parametrów** w zakładce
-  Pomoc (co robi / ile ustawić / dlaczego) PL + EN, sekcja o konwersji
-  wyniku .md → PDF/DOCX/ODT
+  Pomoc (co robi / ile ustawić / dlaczego) PL + EN; punkt o formatach
+  binarnych opisuje round-trip EPUB/DOCX/ODT do oryginalnego formatu
 
-### Silnik tłumaczenia (v0.8.0 → v0.16.0)
+### Silnik tłumaczenia (v0.8.0 → v0.19.0)
 - `core.py` (bez zależności Qt) — chunking, glosariusz, skille, `max_tokens`,
   wykrywanie czy tekst już jest w języku docelowym (przez prompt, v0.8.0)
 - `translate_file` używa potoku: `protect` → `split_segments` → tłumaczenie →
   `restore`, z segmentami `keep` kopiowanymi wprost (v0.16.0)
+- **`_translate_document_xml` (v0.19.0)** — dla DOCX/ODT tłumaczy tylko tekst
+  węzłów XML (`w:t` / `text:*`) w miejscu, zachowując znaczniki i deklaracje;
+  EPUB używa potoku `_translate_text` na każdym pliku XHTML
 
 ## Struktura kodu
 
@@ -125,10 +137,11 @@ tlumacz/
 
 ## Testy
 
-- `python3 -m pytest tests/` — **79 testów** (glosariusz, config z backupem
-  i profilami modeli, skille z `skip_patterns` i szablonem, preprocessing,
-  ekstrakcja ODT/EPUB + ścieżki błędów PDF/DOCX, serwer (kolejność szablonów),
-  silnik tłumaczenia z formatami binarnymi, GUI smoke offscreen)
+- `python3 -m pytest tests/` — **86 testów** (glosariusz, config z backupem
+  i profilami modeli, skille z `skip_patterns` i szablonem, preprocessing
+  w tym `split_xml_segments` i ochrona tagów/URL, ekstrakcja ODT/EPUB/DOCX
+  (pandoc) + ścieżki błędów, serwer (kolejność szablonów), silnik tłumaczenia
+  z formatami binarnymi — w tym round-trip DOCX/ODT/EPUB, GUI smoke offscreen)
 
 ## Pakowanie / dystrybucja
 
@@ -188,6 +201,10 @@ automatycznie (autofallback + `model_profiles`).
 | v0.17.0 | Odporność na modele (autofallback + `model_profiles`), `skip_patterns` w skillach, `SKILL_TEMPLATE.md` + „Nowy skilla", ekstrakcja PDF/DOCX/ODT/EPUB + 4 skille, „Przywróć domyślne" + backup, tooltipy i tabela parametrów w Pomocy; testy 79 |
 | v0.17.1 | Fix: tłumaczenie dokumentów dwujęzycznych (prompt jawnie nakazuje tłumaczyć wszystkie obcojęzyczne fragmenty); skalowanie okna do ekranu + scrollowane ustawienia; testy 80 |
 | v0.17.2 | Fix: ekstrakcja DOCX bez python-docx (fallback pandoc, ostatecznie LibreOffice) — działa w venv bez instalowania pakietów; testy 81 |
+| v0.18.0 | EPUB tłumaczy całą treść (pusty `skip_patterns` w skilla), czyszczenie `<|im_start|>`; wierny EPUB (mimetype STORED) |
+| v0.18.1 | Fix: EPUB z zachowaniem struktury archiwum (mimetype STORED, bez artefaktów) |
+| v0.18.2 | DOCX wyłącznie przez pandoc; usunięty `python-docx` i fallback LibreOffice |
+| v0.19.0 | **Round-trip DOCX/ODT 1:1** — `extract_office_structure`/`reconstruct_zip`/`_translate_document_xml` (tłumaczy tylko węzły `w:t`/`text:*`), `split_xml_segments`, ochrona tagów XML przed URL; EPUB też w oryginalnym formacie; testy 86 |
 
 ## Plan (do_zrobienia.md)
 
@@ -196,7 +213,8 @@ Zob. [do_zrobienia.md](do_zrobienia.md) — najważniejsze pozycje:
 - Lista modeli z serwera (`GET /v1/models`) zamiast pola tekstowego
 - **Lokalizacja aplikacji (i18n): PL + EN, łatwe dodawanie kolejnych języków**
 - Detekcja przez próbę dla modeli (mikro-zapytanie: EOS / tryb „myślenia")
-- OCR dla skanów PDF
+- **OCR dla skanów PDF i obrazów (Tesseract)** + obsługa png/jpg/webp/bmp → md
+- PDF round-trip (przetłumaczone `.md` → `.pdf`)
 - Paczki DEB / RPM / AppImage
 - Skrypt automatycznej synchronizacji moje-repo
 - Ikona repo / og-image

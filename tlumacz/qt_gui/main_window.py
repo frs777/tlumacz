@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QDir, QSettings, Qt
+from PySide6.QtCore import QDir, QElapsedTimer, QSettings, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import TranslatorConfig
-from ..extract import BINARY_FORMATS
+
 from ..glossary import Glossary
 from ..preprocess import DEFAULT_SKIP_PATTERNS
 from ..server import SERVER_MODEL_ALIAS
@@ -124,6 +124,15 @@ class MainWindow(QMainWindow):
         self._settings, config_warning = load_settings()
         self._server = server
         self._thread: TranslationThread | None = None
+        self._elapsed_timer = QElapsedTimer()
+        self._elapsed_display_timer = QTimer(self)
+        self._elapsed_display_timer.setInterval(100)
+        self._elapsed_display_timer.timeout.connect(self._update_elapsed_time)
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(120)
+        self._spinner_timer.timeout.connect(self._advance_spinner)
+        self._spinner_frames = ("◐", "◓", "◑", "◒")
+        self._spinner_index = 0
         self._skills: list = []
         self._skill_checkboxes: list[QCheckBox] = []
         self._loading = True
@@ -169,6 +178,19 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         t_layout.addWidget(self.progress_bar)
+
+        status_row = QHBoxLayout()
+        self.spinner_label = QLabel(self._spinner_frames[0])
+        self.spinner_label.setObjectName("spinnerLabel")
+        self.spinner_label.setMinimumWidth(24)
+        self.spinner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spinner_label.setVisible(False)
+        status_row.addWidget(self.spinner_label)
+        self.elapsed_label = QLabel("Czas: 00:00")
+        self.elapsed_label.setObjectName("elapsedLabel")
+        status_row.addWidget(self.elapsed_label)
+        status_row.addStretch(1)
+        t_layout.addLayout(status_row)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setObjectName("outputSplitter")
@@ -237,6 +259,7 @@ class MainWindow(QMainWindow):
         self.input_path = QLineEdit()
         self.input_path.setObjectName("inputPath")
         self.input_path.setPlaceholderText("Plik wejściowy do tłumaczenia")
+        self.input_path.textChanged.connect(self._auto_select_skill_for_input)
         input_browse = QPushButton("Przeglądaj...")
         input_browse.clicked.connect(self._on_browse_input)
 
@@ -448,8 +471,8 @@ class MainWindow(QMainWindow):
 <h2>Tłumacz — pomoc</h2>
 <p>Tłumacz to narzędzie do tłumaczenia dokumentów (Markdown, TXT, HTML,
 PDF, DOCX, ODT, EPUB) za pomocą modeli LLM zgodnych z API OpenAI.
-Formaty binarne są najpierw wyodrębniane do tekstu Markdown, a wynik
-zapisywany jako plik <code>.md</code>.</p>
+Pliki EPUB, DOCX i ODT są tłumaczone z zachowaniem oryginalnego formatu;
+PDF jest wyodrębniany do Markdown i zapisywany jako <code>.md</code>.</p>
 
 <h3>1. Konfiguracja modelu (zakładka „Ustawienia”)</h3>
 <ul>
@@ -562,20 +585,16 @@ większy = mniej wywołań, ale ryzyko obcięcia i utraty spójności.</td></tr>
 <td>Wyłącz, gdy używasz własnego, już działającego serwera.</td></tr>
 </table>
 
-<h3>8. Konwersja wyniku (.md → PDF / DOCX / ODT)</h3>
-<p>Wynik tłumaczenia formatów binarnych jest zapisywany jako Markdown
-(<code>.md</code>). Aby przywrócić go do innego formatu, skorzystaj
-z zewnętrznych narzędzi:</p>
-<ul>
-<li><b>PDF</b> — otwórz plik <code>.md</code> w przeglądarce lub edytorze
-i użyj „Drukuj → Zapisz jako PDF".</li>
-<li><b>DOCX</b> — <a href="https://github.com/nihole/md2docx">md2docx</a>,
-<a href="https://github.com/timwis/markdown-to-google-doc">markdown-to-google-doc</a>,
-<a href="https://github.com/vace/markdown-docx">markdown-docx</a>.</li>
-<li><b>ODT</b> — <a href="https://github.com/abcBHM/MD2odt">MD2odt</a>,
-<a href="https://github.com/astrapi69/md-to-odt">md-to-odt</a>,
-<a href="https://github.com/sohooo/md2odt">md2odt</a>.</li>
-</ul>
+<h3>8. Formaty binarne — wynik w oryginalnym formacie</h3>
+<p>Od wersji 0.19 pliki <b>EPUB, DOCX i ODT</b> są tłumaczone z zachowaniem
+formatu 1:1 — wynik ma to samo rozszerzenie co plik wejściowy
+(<code>.epub</code>, <code>.docx</code>, <code>.odt</code>). Tłumaczony jest
+tylko tekst wewnątrz dokumentu; struktura, style, tabele i pozostałe pliki
+archiwum (obrazki, czcionki, ustawienia) zostają nietknięte.</p>
+<p><b>PDF</b> — jako dokument trudny do odtworzenia 1:1: tekst jest
+wyodrębniany (<code>pdftotext</code>/pypdf) i wynik zapisywany jako Markdown
+(<code>.md</code>). Aby przywrócić go do PDF, otwórz plik <code>.md</code>
+w przeglądarce lub edytorze i użyj „Drukuj → Zapisz jako PDF".</p>
 """
 
     def _help_text_en(self) -> str:
@@ -583,8 +602,8 @@ i użyj „Drukuj → Zapisz jako PDF".</li>
 <h2>Tłumacz — help</h2>
 <p>Tłumacz is a tool for translating documents (Markdown, TXT, HTML,
 PDF, DOCX, ODT, EPUB) using LLM models that speak the OpenAI-compatible API.
-Binary formats are first extracted to Markdown text; the result is saved
-as a <code>.md</code> file.</p>
+EPUB, DOCX and ODT files are translated while keeping the original format;
+PDF is extracted to Markdown and saved as a <code>.md</code> file.</p>
 
 <h3>1. Model setup (Settings tab)</h3>
 <ul>
@@ -693,19 +712,16 @@ larger = fewer calls but risk of truncation and lost coherence.</td></tr>
 <td>Turn off when using your own running server.</td></tr>
 </table>
 
-<h3>8. Converting the result (.md → PDF / DOCX / ODT)</h3>
-<p>Binary formats are translated to Markdown (<code>.md</code>). To get the
-result back into another format, use external tools:</p>
-<ul>
-<li><b>PDF</b> — open the <code>.md</code> file in a browser or editor and
-use “Print → Save as PDF”.</li>
-<li><b>DOCX</b> — <a href="https://github.com/nihole/md2docx">md2docx</a>,
-<a href="https://github.com/timwis/markdown-to-google-doc">markdown-to-google-doc</a>,
-<a href="https://github.com/vace/markdown-docx">markdown-docx</a>.</li>
-<li><b>ODT</b> — <a href="https://github.com/abcBHM/MD2odt">MD2odt</a>,
-<a href="https://github.com/astrapi69/md-to-odt">md-to-odt</a>,
-<a href="https://github.com/sohooo/md2odt">md2odt</a>.</li>
-</ul>
+<h3>8. Binary formats — result in the original format</h3>
+<p>Since v0.19 the <b>EPUB, DOCX and ODT</b> files are translated while keeping
+the original format 1:1 — the result keeps the same extension as the input
+(<code>.epub</code>, <code>.docx</code>, <code>.odt</code>). Only the text
+inside the document is translated; the structure, styles, tables and all other
+archive files (images, fonts, settings) stay untouched.</p>
+<p><b>PDF</b> — as a document that is hard to rebuild 1:1: the text is
+extracted (<code>pdftotext</code>/pypdf) and the result is saved as Markdown
+(<code>.md</code>). To turn it back into a PDF, open the <code>.md</code> file
+in a browser or editor and use “Print → Save as PDF”.</p>
 """
 
     def _build_settings_group(self) -> QGroupBox:
@@ -935,15 +951,52 @@ use “Print → Save as PDF”.</li>
     def _append_log(self, message: str) -> None:
         self.log_view.appendPlainText(message)
 
+    def _format_elapsed(self, milliseconds: int) -> str:
+        total_seconds = max(0, milliseconds // 1000)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            return f"Czas: {hours:02d}:{minutes:02d}:{seconds:02d}"
+        return f"Czas: {minutes:02d}:{seconds:02d}"
+
+    def _update_elapsed_time(self) -> None:
+        if self._elapsed_timer.isValid():
+            self.elapsed_label.setText(
+                self._format_elapsed(self._elapsed_timer.elapsed())
+            )
+
+    def _advance_spinner(self) -> None:
+        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
+        self.spinner_label.setText(self._spinner_frames[self._spinner_index])
+
+    def _start_activity_indicators(self) -> None:
+        self._elapsed_timer.start()
+        self._elapsed_display_timer.start()
+        self._spinner_index = 0
+        self.spinner_label.setText(self._spinner_frames[0])
+        self.spinner_label.setVisible(True)
+        self._spinner_timer.start()
+        self._update_elapsed_time()
+
+    def _stop_activity_indicators(self) -> None:
+        if self._elapsed_timer.isValid():
+            self._update_elapsed_time()
+        self._elapsed_display_timer.stop()
+        self._spinner_timer.stop()
+        self.spinner_label.setVisible(False)
+
     def _set_idle_state(self) -> None:
         self.translate_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setValue(0)
+        self._stop_activity_indicators()
 
     def _set_running_state(self) -> None:
         self.translate_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("0%")
+        self._start_activity_indicators()
 
     # ------------------------------------------------------------ handlers --
 
@@ -1139,6 +1192,24 @@ use “Print → Save as PDF”.</li>
             return
         save_settings(self._collect_settings())
 
+    def _auto_select_skill_for_input(self, text: str) -> None:
+        """Auto-check the skill whose format matches the input extension.
+
+        Lets the user type/pick any file without manually toggling the
+        matching format skill; the right one is enabled automatically.
+        """
+        if self._loading or not self._skill_checkboxes:
+            return
+        if not text.strip():
+            return
+        ext = Path(text.strip()).suffix.lower().lstrip(".")
+        if not ext:
+            return
+        for skill, checkbox in zip(self._skills, self._skill_checkboxes):
+            if ext in skill.formats and not checkbox.isChecked():
+                checkbox.setChecked(True)
+                self._append_log(f"Automatycznie wybrano skille: {skill.name}")
+
     def theme_mode(self) -> str:
         """Return the currently selected theme mode (``system``/``light``/``dark``)."""
         return self.theme.currentData() or "system"
@@ -1223,11 +1294,12 @@ def _default_output_path(input_path: str, language: str) -> str:
     """Return ``name_<suffix>.ext`` next to the input file.
 
     The suffix follows the selected target language (``pl``, ``en``, ...).
-    Binary formats (PDF, DOCX, ODT, EPUB) are translated to Markdown, so the
-    output extension is always ``.md``.
+    DOCX, ODT and EPUB are translated back to the original format, so they
+    keep their extension; only PDF is translated to Markdown (``.md``).
     """
     suffix = LANGUAGE_SUFFIXES.get(language, "pl")
     path = Path(input_path)
-    if path.suffix.lower().lstrip(".") in BINARY_FORMATS:
+    ext = path.suffix.lower().lstrip(".")
+    if ext == "pdf":
         return str(path.with_name(f"{path.stem}_{suffix}.md"))
     return str(path.with_name(f"{path.stem}_{suffix}{path.suffix}"))

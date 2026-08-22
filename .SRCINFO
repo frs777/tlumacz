@@ -1,0 +1,20 @@
+pkgbase = tlumacz
+	pkgdesc = AI-powered document translator with a Qt GUI
+	pkgver = 0.19.0
+	pkgrel = 1
+	url = https://github.com/frs777/tlumacz
+	arch = any
+	license = MIT
+	makedepends = python-build
+	makedepends = python-installer
+	depends = python
+	depends = pyside6
+	depends = python-openai
+	depends = hicolor-icon-theme
+	optdepends = python-pypdf: PDF extraction fallback (when poppler is missing)
+	optdepends = pandoc: DOCX extraction (docx to Markdown)
+	optdepends = poppler: PDF extraction (pdftotext)
+	source = tlumacz-0.19.0.tar.gz
+	b2sums = 004070169cf19ac1f7301a5c4bf08f45ba7cf08a2d7730bc0580ab1c8daf74ad168bb89ce1178f7b741abeb0ae6624b8181dcdfb51990c4ef50cf4bb103d9cb2
+
+pkgname = tlumacz

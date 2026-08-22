@@ -105,9 +105,9 @@ def test_default_prompt_is_language_generic():
 def test_default_prompt_covers_multilingual_input():
     config = TranslatorConfig(target_language="Polish")
     prompt = config.system_prompt
-    assert "more than one language" in prompt
-    assert "Every sentence in another" in prompt
+    assert "Translate all passages that are not already in Polish" in prompt
     assert "must be translated" in prompt
+    assert "preserving Markdown formatting" in prompt
 
 
 def test_custom_prompt_replaces_default_but_glossary_appended(tmp_path):
@@ -115,8 +115,11 @@ def test_custom_prompt_replaces_default_but_glossary_appended(tmp_path):
     glossary.write_text("Hello,Witaj\n", encoding="utf-8")
     config = TranslatorConfig(system_prompt="Mój styl.", glossary_path=str(glossary))
     assert config.system_prompt.startswith("Mój styl.")
-    assert "Hello => Witaj" in config.system_prompt
     assert "You are a professional" not in config.system_prompt
+    assert config._glossary_prompt_for("no matching words here") == ""
+    gloss = config._glossary_prompt_for("Hello there")
+    assert "Hello => Witaj" in gloss
+    assert "glossary list itself" in gloss
 
 
 def test_translate_file_uses_skill_for_matching_format(tmp_path):
