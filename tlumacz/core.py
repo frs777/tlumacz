@@ -59,22 +59,35 @@ class TranslatorConfig:
         if base is None:
             base = (
                 "You are a professional technical translator. "
-                f"Translate all passages that are not already in "
+                "The text may be written in more than one language. "
+                f"Translate ALL passages that are not already in "
                 f"{self.target_language} into {self.target_language}, "
-                "preserving Markdown formatting and structure. "
-                "Every passage in another language must be translated; "
-                "do not skip, omit, or leave any passage untranslated. "
-                "Respond directly with the translation only."
+                "preserving Markdown formatting. Every sentence in another "
+                "language (for example English, German, French) must be "
+                "translated - do not skip, omit, or leave any passage in its "
+                "original language. Passages that are already in "
+                f"{self.target_language} must be returned unchanged. "
+                "Respond directly with the translation only. Do not include "
+                "any thinking, reasoning, or commentary."
             )
         self.system_prompt = base
         self._glossary: Glossary | None = None
-        if self.glossary_path:
-            try:
-                self._glossary = Glossary.from_csv(
-                    self.glossary_path, max_entries=MAX_PROMPT_ENTRIES
-                )
-            except OSError:
-                self._glossary = None
+        glossary_text = self._load_glossary_text()
+        if glossary_text:
+            base = base.rstrip() + "\n\n" + glossary_text
+        self.system_prompt = base
+
+    def _load_glossary_text(self) -> str:
+        if not self.glossary_path:
+            return ""
+        try:
+            self._glossary = Glossary.from_csv(
+                self.glossary_path, max_entries=MAX_PROMPT_ENTRIES
+            )
+            return self._glossary.to_prompt()
+        except OSError:
+            self._glossary = None
+            return ""
 
     def _glossary_prompt_for(self, source_text: str) -> str:
         """Return glossary terms that actually occur in ``source_text``.
@@ -112,10 +125,6 @@ class Translator:
 
     def __init__(self, config: TranslatorConfig) -> None:
         self.config = config
-        self.client = openai.OpenAI(
-            base_url=config.base_url,
-            api_key=config.api_key,
-        )
 
     def _split_into_chunks(self, text: str) -> list[str]:
         """Split text into chunks without breaking lines when possible.
@@ -154,11 +163,11 @@ class Translator:
     def _translate_chunk(self, chunk: str, skill_text: str = "") -> str:
         """Translate a single chunk via the configured API."""
         system = self.config.system_prompt
-        glossary_text = self.config._glossary_prompt_for(chunk)
-        if glossary_text:
-            system = system.rstrip() + "\n\n" + glossary_text
         if skill_text:
             system = system.rstrip() + "\n\n" + skill_text
+        # Limit response length to a sensible multiple of the input chunk size
+        # (approx. 4 chars/token, allow up to ~1.5x the input token count).
+        max_tokens = max(2048, len(chunk) * 3 // 4)
         request_kwargs: dict = {
             "model": self.config.model,
             "messages": [
@@ -166,27 +175,38 @@ class Translator:
                 {
                     "role": "user",
                     "content": (
-                        f"Translate into {self.config.target_language}. "
-                        f"Output only the translation. "
-                        f"Translate EVERY passage, including YAML frontmatter "
-                        f"description values and other prose metadata; do not "
-                        f"treat indented or label lines as code to preserve. "
-                        f"Only actual code, URLs, file names and identifiers "
-                        f"stay unchanged. "
-                        f"Never output the glossary list or any term-to-"
-                        f"translation pairs.\n\n{chunk}"
+                        f"Translate ALL passages of the following text that "
+                        f"are not already in {self.config.target_language} into "
+                        f"{self.config.target_language}, preserving Markdown "
+                        "formatting. Do not leave any passage in another "
+                        "language - every foreign-language sentence must be "
+                        "translated:\n\n"
+                        f"{chunk}"
                     ),
                 },
             ],
             "temperature": self.config.temperature,
-            "max_tokens": max(512, min(4096, self.config.chunk_size)),
+            "max_tokens": max_tokens,
         }
         if self.config.chat_template_kwargs:
             request_kwargs["extra_body"] = {
                 "chat_template_kwargs": self.config.chat_template_kwargs
             }
-        response = self.client.chat.completions.create(**request_kwargs)
-        content = response.choices[0].message.content or ""
+        # Use a fresh HTTP client for every chunk. This prevents the
+        # keep-alive connection of a previous request from pinning the single
+        # slot of a local llama-server (parallel=1) and makes stuck requests
+        # recoverable via the built-in retry+timeout.
+        client = openai.OpenAI(
+            base_url=self.config.base_url,
+            api_key=self.config.api_key,
+            timeout=300.0,
+            max_retries=2,
+        )
+        try:
+            response = client.chat.completions.create(**request_kwargs)
+            content = response.choices[0].message.content or ""
+        finally:
+            client.close()
         return _strip_eos_tokens(content)
 
     def translate_file(

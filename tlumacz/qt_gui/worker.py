@@ -72,10 +72,13 @@ class TranslationThread:
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._on_done)
         self.worker.failed.connect(self._on_done)
+        self.thread.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
 
     def _on_done(self) -> None:
-        """Run on the main thread after the worker finishes or fails."""
-        self.stop()
+        """Mark completion; the owner performs final thread cleanup."""
+        if self.thread.isRunning():
+            self.thread.quit()
 
     @property
     def progress(self) -> Signal:
@@ -104,4 +107,5 @@ class TranslationThread:
         self.worker.cancel()
         if self.thread.isRunning():
             self.thread.quit()
-            self.thread.wait(5000)
+            if not self.thread.wait(15000):
+                raise RuntimeError("Translation thread did not stop within 15 seconds")
