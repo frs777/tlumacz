@@ -3,7 +3,7 @@
 #   replace source with: https://github.com/frs777/tlumacz/archive/v$pkgver.tar.gz
 
 pkgname=tlumacz
-pkgver=0.19.0
+pkgver=0.19.1
 pkgrel=1
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')
