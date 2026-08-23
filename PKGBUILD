@@ -25,7 +25,7 @@ makedepends=(
     'python-installer'
 )
 source=("tlumacz-$pkgver.tar.gz")
-b2sums=('004070169cf19ac1f7301a5c4bf08f45ba7cf08a2d7730bc0580ab1c8daf74ad168bb89ce1178f7b741abeb0ae6624b8181dcdfb51990c4ef50cf4bb103d9cb2')
+b2sums=('38ed38b0b62462a0d7a8067ed31c25ccc442a4ffeb3465caac5ac087c780e41c25e81bf4a0f3ddbb48342f46acb393a3a38c3abec388872be1cf94c9819cec4f')
 
 build() {
     cd "$pkgname-$pkgver"
