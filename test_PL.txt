@@ -1,8 +1,0 @@
-```json
-{
-  "name": "file_reader",
-  "arguments": {
-    "path": "/home/frs/Projekty/agent-translator/test.txt"
-  }
-}
-```

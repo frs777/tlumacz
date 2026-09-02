@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
 import openai
 
+from .cache import TranslationCache
 from .extract import (
     ExtractionError,
     extract_epub_structure,
@@ -35,6 +39,40 @@ from .skill import text_for_file
 
 MAX_NODES_PER_SEGMENT = 25
 
+# Threshold above which a chunk is considered "slow" for diagnostic purposes
+# (see _log_chunk_timing). Chosen well below the 300s client timeout so a
+# stuck chunk is flagged long before it would otherwise time out.
+_SLOW_CHUNK_SECONDS = 30.0
+
+
+def _log_chunk_timing(chunk: str, max_tokens: int, elapsed: float) -> None:
+    """Append a per-chunk timing line to ~/.config/tlumacz/debug.log.
+
+    This exists to diagnose the "translation hangs on some chunk" issue
+    (see blad.md / DEBUG_QT.md item D): capping max_tokens bounds the worst
+    case, but does not explain *why* a given chunk is slow. Only slow
+    chunks get a short content preview, to keep the log small in the
+    normal case while still giving enough to compare a future hang
+    against working chunks by length, timing, and source content.
+
+    Best-effort only: a logging failure must never break translation.
+    """
+    try:
+        log_dir = Path.home() / ".config" / "tlumacz"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        line = (
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"chunk_len={len(chunk)} max_tokens={max_tokens} "
+            f"elapsed={elapsed:.1f}s"
+        )
+        if elapsed >= _SLOW_CHUNK_SECONDS:
+            preview = chunk[:60].replace("\n", " ")
+            line += f" SLOW preview={preview!r}"
+        with open(log_dir / "debug.log", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
 
 @dataclass
 class TranslatorConfig:
@@ -50,9 +88,12 @@ class TranslatorConfig:
     glossary_path: Optional[str] = None
     enabled_skills: list[str] = field(default_factory=list)
     chat_template_kwargs: Optional[dict] = None
+    parallel: int = 1
     skip_line_patterns: list[str] = field(
         default_factory=lambda: list(DEFAULT_SKIP_PATTERNS)
     )
+    cache_enabled: bool = True
+    cache_clear_after_translation: bool = True
 
     def __post_init__(self) -> None:
         base = self.system_prompt
@@ -125,6 +166,21 @@ class Translator:
 
     def __init__(self, config: TranslatorConfig) -> None:
         self.config = config
+        self._cancel_event = threading.Event()
+        self._client_lock = threading.Lock()
+        self._active_clients: set[object] = set()
+        self._cache = TranslationCache(enabled=config.cache_enabled)
+
+    def cancel(self) -> None:
+        """Interrupt active HTTP requests and prevent new translation work."""
+        self._cancel_event.set()
+        with self._client_lock:
+            clients = list(self._active_clients)
+        for client in clients:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     def _split_into_chunks(self, text: str) -> list[str]:
         """Split text into chunks without breaking lines when possible.
@@ -160,18 +216,51 @@ class Translator:
 
         return chunks
 
-    def _translate_chunk(self, chunk: str, skill_text: str = "") -> str:
-        """Translate a single chunk via the configured API."""
-        system = self.config.system_prompt
+    def _build_system_prompt(self, skill_text: str = "") -> str:
+        """Build the complete system prompt once per translation.
+        
+        Combines base prompt + skill + glossary into a single string
+        to avoid redundant concatenation for each chunk.
+        """
+        system = self.config.system_prompt or DEFAULT_SYSTEM_PROMPT
         if skill_text:
             system = system.rstrip() + "\n\n" + skill_text
-        # Limit response length to a sensible multiple of the input chunk size
-        # (approx. 4 chars/token, allow up to ~1.5x the input token count).
-        max_tokens = max(2048, len(chunk) * 3 // 4)
+        # Glossary is appended if available
+        if self.config.glossary_path and os.path.exists(self.config.glossary_path):
+            try:
+                glossary = Glossary.load(self.config.glossary_path)
+            except Exception:
+                glossary = None
+            if glossary:
+                glossary_text = glossary.prompt_snippet()
+                if glossary_text:
+                    system = system.rstrip() + "\n\n" + glossary_text
+        return system
+
+    def _translate_chunk(self, chunk: str, system_prompt: str) -> str:
+        """Translate a single chunk via the configured API.
+        
+        Args:
+            chunk: Text to translate.
+            system_prompt: Pre-built system prompt (base + skill + glossary).
+        """
+        # Check cache first - avoids redundant API calls for repeated content
+        cached = self._cache.get(
+            chunk, system_prompt, "",
+            self.config.model, self.config.temperature
+        )
+        if cached is not None:
+            return cached
+
+        # Translation output should be close to the source length.
+        # Scale max_tokens proportionally to chunk_size - smaller chunks
+        # get smaller max_tokens to avoid wasting time on token generation.
+        chunk_ratio = len(chunk) / max(1, self.config.chunk_size)
+        max_tokens = max(256, int(1024 * chunk_ratio))
         request_kwargs: dict = {
             "model": self.config.model,
             "messages": [
-                {"role": "system", "content": system},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": (
@@ -192,22 +281,55 @@ class Translator:
             request_kwargs["extra_body"] = {
                 "chat_template_kwargs": self.config.chat_template_kwargs
             }
-        # Use a fresh HTTP client for every chunk. This prevents the
-        # keep-alive connection of a previous request from pinning the single
-        # slot of a local llama-server (parallel=1) and makes stuck requests
-        # recoverable via the built-in retry+timeout.
-        client = openai.OpenAI(
-            base_url=self.config.base_url,
-            api_key=self.config.api_key,
-            timeout=300.0,
-            max_retries=2,
-        )
+        # Tests may inject a fake client via ``translator.client``. In
+        # production we create a fresh HTTP client for every chunk so a stuck
+        # keep-alive connection cannot pin the single slot of a local
+        # llama-server (parallel=1). Local requests are not retried.
+        client = getattr(self, "client", None)
+        own_client = client is None
+        if own_client:
+            # Local llama-server should not retry a timed-out generation:
+            # the server may still be generating the abandoned request, so a
+            # retry only multiplies the load and hides the real request time.
+            client = openai.OpenAI(
+                base_url=self.config.base_url,
+                api_key=self.config.api_key,
+                timeout=300.0,
+                max_retries=0,
+            )
+        if self._cancel_event.is_set():
+            if own_client:
+                client.close()
+            raise TranslationCancelledError("Translation was cancelled.")
+        with self._client_lock:
+            self._active_clients.add(client)
+        request_start = time.monotonic()
         try:
             response = client.chat.completions.create(**request_kwargs)
+            if self._cancel_event.is_set():
+                raise TranslationCancelledError("Translation was cancelled.")
             content = response.choices[0].message.content or ""
+        except TranslationCancelledError:
+            raise
+        except Exception:
+            if self._cancel_event.is_set():
+                raise TranslationCancelledError("Translation was cancelled.")
+            raise
         finally:
-            client.close()
-        return _strip_eos_tokens(content)
+            _log_chunk_timing(chunk, max_tokens, time.monotonic() - request_start)
+            with self._client_lock:
+                self._active_clients.discard(client)
+                try:
+                    client.close()
+                except Exception:
+                    pass
+        result = _strip_eos_tokens(content)
+        # Store in cache for future use
+        self._cache.put(
+            chunk, system_prompt, "",
+            self.config.model, self.config.temperature, result
+        )
+        return result
 
     def translate_file(
         self,
@@ -293,13 +415,31 @@ class Translator:
         if skill_name:
             log(f"Using skill: {skill_name}")
 
+        # Build system prompt once for all chunks
+        system_prompt = self._build_system_prompt(skill_text)
+
         if protected:
             log(f"Protected {len(protected)} code/URL fragment(s)")
         log(f"Processing {total} chunk(s)...")
 
         with open(output_path, "w", encoding="utf-8") as out:
             written = 0
-            for kind, content in segments:
+            translate_segments = [(i, content) for i, (kind, content) in enumerate(segments) if kind == "translate"]
+            translated_map: dict[int, str] = {}
+            if self.config.parallel > 1 and len(translate_segments) > 1:
+                executor = ThreadPoolExecutor(max_workers=self.config.parallel)
+                try:
+                    futures = {executor.submit(self._translate_chunk, content, system_prompt): i for i, content in translate_segments}
+                    for future in as_completed(futures):
+                        if is_cancelled is not None and is_cancelled():
+                            raise TranslationCancelledError("Translation was cancelled.")
+                        translated_map[futures[future]] = future.result()
+                except TranslationCancelledError:
+                    self.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
+                executor.shutdown(wait=True)
+            for index, (kind, content) in enumerate(segments):
                 if is_cancelled is not None and is_cancelled():
                     log("Translation cancelled by user.")
                     raise TranslationCancelledError("Translation was cancelled.")
@@ -312,7 +452,7 @@ class Translator:
                 written += 1
                 log(f"Translating chunk {written}/{total}...")
 
-                translated = self._translate_chunk(content, skill_text)
+                translated = translated_map[index] if translated_map else self._translate_chunk(content, system_prompt)
                 out.write(restore(translated, protected))
                 out.write("\n\n")
 
@@ -320,6 +460,25 @@ class Translator:
                     progress_callback(written, total)
 
         log(f"Translation saved to: {output_path}")
+
+        # Log cache statistics
+        cache_stats = self._cache.stats()
+        if cache_stats.get("enabled"):
+            hits = cache_stats["hits"]
+            misses = cache_stats["misses"]
+            total_requests = hits + misses
+            if total_requests > 0:
+                effectiveness = (hits / total_requests) * 100
+                log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+            else:
+                log("Cache: no lookups")
+        
+        # Clear cache after translation if configured (for accurate benchmarking)
+        if self.config.cache_clear_after_translation:
+            self._cache.clear()
+            log("Cache cleared after translation")
+        
+        self._cache.reset_stats()
 
     def _translate_epub_xhtml(
         self,
@@ -427,12 +586,15 @@ class Translator:
         if skill_name:
             _log(f"Using skill: {skill_name}")
 
+        # Build system prompt once for all XML files
+        system_prompt = self._build_system_prompt(skill_text)
+
         updates: dict[str, bytes] = {}
         for idx, rel in enumerate(content_paths, start=1):
             raw = files[rel].decode("utf-8", errors="replace")
             _log(f"Tłumaczenie pliku {idx}/{len(content_paths)}: {rel}")
             translated = self._translate_document_xml(
-                raw, ext,
+                raw, ext, system_prompt,
                 log=_log, progress_callback=progress_callback,
                 is_cancelled=is_cancelled,
             )
@@ -450,6 +612,7 @@ class Translator:
         self,
         raw_xml: str,
         ext: str,
+        system_prompt: str,
         *,
         log: Callable[[str], None],
         progress_callback: Optional[Callable[[int, int], None]] = None,
@@ -535,7 +698,7 @@ class Translator:
             marker = "\n⟦S_%d⟧\n"
             joined = marker.join(slots[i][0].text or "" for i in seg)
             log(f"Tłumaczenie segmentu {seg_idx + 1}/{len(segments)}...")
-            translated = self._translate_chunk(joined, "")
+            translated = self._translate_chunk(joined, system_prompt)
             parts = re.split(r"⟦S_\d+⟧", translated)
             if len(parts) == len(seg) + 1:
                 for i, chunk_i in zip(seg, parts[1:]):
@@ -547,7 +710,7 @@ class Translator:
                         raise TranslationCancelledError(
                             "Translation was cancelled."
                         )
-                    slots[i][0].text = self._translate_chunk(slots[i][0].text or "", "")
+                    slots[i][0].text = self._translate_chunk(slots[i][0].text or "", system_prompt)
             if progress_callback is not None:
                 progress_callback(seg_idx + 1, len(segments))
 
@@ -594,6 +757,9 @@ class Translator:
             )
         total = sum(1 for kind, _ in segments if kind == "translate")
 
+        # Build system prompt once for all chunks
+        system_prompt = self._build_system_prompt(skill_text)
+
         if protected:
             log(f"Protected {len(protected)} code/URL fragment(s)")
         log(f"Processing {total} chunk(s)...")
@@ -611,7 +777,7 @@ class Translator:
 
             written += 1
             log(f"Translating chunk {written}/{total}...")
-            translated = self._translate_chunk(content, skill_text)
+            translated = self._translate_chunk(content, system_prompt)
             parts.append(restore(translated, protected) + "\n\n")
 
             if progress_callback is not None:

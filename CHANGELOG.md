@@ -5,306 +5,175 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Planned
+- Add a **Restart serwera** button to GUI Settings. The managed `llama-server`
+  will be stopped and started again using the current GUI/config parameters,
+  without restarting the whole application. After restart, verify the API
+  (`/v1/models`) and show success/error status to the user.
+- Do not change the translation timer: the **stoper is already implemented**.
+- Test newer 2B translation models and strengthen prompts for Markdown/HTML/
+  DOCX/ODT/EPUB, especially for bilingual and multilingual documents.
+- Improve translation performance and choose a final quality/speed model.
+
+## [0.19.1] - 2026-08-23
+
+### Added
+- Test build with the current document translation pipeline and round-trip
+  support for DOCX/ODT/EPUB.
+- Translation timer (stoper) is implemented and retained as part of the GUI.
+- Local Arch package `tlumacz-0.19.1-1-any.pkg.tar.zst` built successfully.
+
+### Changed
+- Local repository `/home/frs/RepoArch/x86_64/moje-repo.db` updated with the
+  0.19.1 test package.
+- Current test model is **Hy-MT2-1.8B-Q4_K_S**. It is fast enough for practical
+  pipeline tests, but bilingual/multilingual documents still expose quality
+  problems such as untranslated source-language fragments.
+
+### Notes
+- **0.19.1 is an early development/test version and is intentionally not
+  published to the public AUR.**
+- Snapshot/tag `snapshot-20260823-pre-aur` was created before further model and
+  prompt experiments, so this state can be restored easily.
+- Format tests indicate that DOCX/ODT/EPUB round-trip structure is preserved;
+  remaining issues are primarily translation quality/model limitations rather
+  than loss of the document format.
+
 ## [0.19.0] - 2026-08-20
 
 ### Added
 - **DOCX and ODT now round-trip to their original format** instead of
-  producing Markdown. The archive is unpacked and only the text inside XML
-  text nodes (`w:t` for DOCX, `text:*` for ODT) is sent to the model and
-  written back in place. The markup, styles, tables, empty elements and all
-  non-content files (media, rels, styles) are preserved verbatim — a faithful
-  1:1 result, essential for administrative documents. Namespace declarations
-  and the XML declaration are kept.
+  producing Markdown. Only text nodes (`w:t` for DOCX, `text:*` for ODT) are
+  translated and written back in place; markup, styles, tables and non-content
+  files are preserved.
 
 ### Changed
-- `protect()` now masks XML/HTML tags (`<...>`) before URLs, so tag markup
-  (including URLs inside attributes) is never sent to the model.
-- XML/HTML content is chunked by characters without ever splitting a
-  protected placeholder, instead of being split line-by-line (fixes dropped
-  tags in multi-line XML such as ODT `content.xml`).
-- Text-less XML files (e.g. empty `comments.xml`/`footnotes.xml`) are copied
-  verbatim instead of being sent to the model.
+- XML/HTML tags are protected before URLs, including URLs inside attributes.
+- XML/HTML content is chunked by characters without splitting protected
+  placeholders.
+- Text-less XML files are copied verbatim instead of being sent to the model.
 
 ## [0.18.2] - 2026-08-20
 
 ### Changed
-- DOCX extraction now uses **pandoc only** (docx -> Markdown), replacing the
-  python-docx + LibreOffice fallback chain. This removes the `python-docx`
-  dependency, simplifies the code, and reduces the extraction to a single
-  step. `pandoc` is documented in `dependencies.md` and added to PKGBUILD
-  optdepends.
+- DOCX extraction uses **pandoc only**, removing the python-docx dependency
+  and LibreOffice fallback chain.
 
 ## [0.18.1] - 2026-08-20
 
 ### Fixed
-- EPUB translation skipped sections that looked like YAML frontmatter
-  (`---`, `name:`, `license:` lines). Config-level `skip_line_patterns` and the
-  generic defaults are no longer applied to EPUB: an EPUB is a book, so all
-  visible text is translated.
-- Chat-template control tokens leaked into the output: `_strip_eos_tokens`
-  now also removes `|<im_start|>` (and surrounding whitespace), not only the
-  trailing `|<im_end|>`/`</s>` tokens, so translated EPUB/HTML files stay clean.
+- EPUB no longer applies Markdown/YAML skip patterns to book content.
+- Chat-template control tokens are stripped from translated output.
 
 ## [0.18.0] - 2026-08-20
 
 ### Added
-- EPUB round-trip translation: each XHTML content file is fed through the
-  standard translation pipeline directly (no Markdown conversion), preserving
-  HTML tags/structure while translating only visible text. Non-content files
-  (CSS, images, fonts, OPF, NCX, mimetype, META-INF) are copied verbatim.
-- `extract_epub_structure()` reads EPUB files in OPF spine order (falls back
-  to sorted names) and `reconstruct_epub()` rebuilds the archive with
-  `mimetype` stored uncompressed first.
+- EPUB round-trip translation preserving XHTML structure and non-content files.
 
 ### Fixed
-- `epub -> epub` translation produced invalid output because text nodes were
-  re-serialized with `xml.etree.ElementTree` (mangled `ns0:` prefixes, dropped
-  XML declaration) and fragments were matched back by splitting on `\n\n`
-  (fragile when the model merges/splits paragraphs). Replaced with a
-  per-file raw-XHTML translation that never re-serializes the document.
+- EPUB rebuilding no longer reserializes XML or relies on fragile paragraph
+  splitting, preventing namespace/XML corruption.
 
 ## [0.17.2] - 2026-08-19
 
 ### Fixed
-- DOCX translation failed with "Ekstrakcja DOCX wymaga pakietu python-docx"
-  even after installing python-docx (venv isolation). DOCX extraction now
-  falls back to `pandoc` (docx -> Markdown) when `python-docx` is missing,
-  and to LibreOffice as a last resort, so `.docx` files translate without any
-  optional Python package installed
+- DOCX extraction works without python-docx in the application venv by using
+  pandoc.
 
 ## [0.17.1] - 2026-08-19
 
 ### Fixed
-- Bilingual/multilingual documents were only partially translated (the model
-  detected the dominant language and left other languages untouched). The
-  default system and user prompts now explicitly instruct the model to
-  translate every passage that is not already in the target language and to
-  keep only target-language passages unchanged
+- Bilingual/multilingual documents now explicitly instruct the model to
+  translate every passage that is not already in the target language.
 
 ## [0.17.0] - 2026-08-19
 
 ### Added
-- Binary document support: `tlumacz/extract.py` extracts text from PDF
-  (`pdftotext`/poppler or `pypdf`), DOCX (`python-docx`), ODT and EPUB
-  (stdlib); `translate_file` auto-detects binary inputs, the result is saved
-  as Markdown; bundled skills `PDF`, `DOCX`, `ODT`, `EPUB`
-- Skill templates: bundled `SKILL_TEMPLATE.md` (excluded from discovery) and
-  a “Nowy skilla...” button copying it into `~/.config/tlumacz/skills/`
-  with a unique filename
-- `skip_patterns` in skill frontmatter — per-format skip regexes applied
-  automatically for the matching file type (the Markdown skill carries the
-  YAML-frontmatter patterns); the GUI regex field moved to an “Advanced”
-  row and patterns are combined with deduplication
-- Model resilience: `LlamaServer.start()` retries with fallback chat
-  templates (`chatml`, native jinja) when the configured one fails, and the
-  working template is remembered in `model_profiles` (keyed by GGUF path)
-  in `config.json`
-- “Przywróć domyślne” button: backs up `config.json` to
-  `config.backup-<timestamp>.json` and restores defaults while keeping
-  user paths; corrupt config files are also backed up before repair
-- Tooltips on all settings fields and a parameter table (what / how much /
-  why) in the Help tab (PL + EN), plus a section on converting the result
-  back to PDF/DOCX/ODT with external tools
-- Input file dialog now offers PDF/DOCX/ODT/EPUB; default output for binary
-  inputs is `name_<lang>.md`
-
-### Changed
-- Robust frontmatter parsing in `skill.py` (regex-based) — values containing
-  `---` (e.g. regex patterns) no longer break the parser
+- Binary document support for PDF, DOCX, ODT and EPUB.
+- User skill template and `skip_patterns` in skill frontmatter.
+- Model chat-template fallback and persistent `model_profiles`.
+- Restore-defaults action with config backups.
+- GUI tooltips and parameter help.
 
 ## [0.16.0] - 2026-08-19
 
 ### Added
-- `tlumacz/preprocess.py`: protection of code blocks/inline code/URLs with
-  `⟦PROT_n⟧` placeholders restored after translation; line filtering via
-  configurable regex skip patterns (YAML frontmatter kept verbatim);
-  section-aware chunking that splits at Markdown headings and groups small
-  sections instead of splitting mid-table
-- `server_chat_template` (Auto/jinja vs chatml): models with an unparseable
-  jinja template (e.g. `translategemma-4b`) are started with
-  `--no-jinja --chat-template chatml`
-- Stripping of leaked chat-template EOS tokens (`<|im_end|>`, `</s>`, ...)
+- Code/URL protection, configurable skip patterns and section-aware chunking.
+- `server_chat_template` support for jinja vs chatml.
+- Chat-template EOS token cleanup.
 
 ## [0.15.0] - 2026-08-19
 
 ### Added
-- Managed-server support for thinking models: `SERVER_MODEL_ALIAS` (`local`),
-  `--jinja` and `--ctx-size 8192` in the server command, `enable_thinking:
-  false` via `chat_template_kwargs`, `max_tokens` 6000 (~5× faster for gemma)
-- Fixed config clobbering on window close (`_loading` guard + closeEvent guard)
+- Managed-server support for thinking models, `--jinja`, `--ctx-size 8192`,
+  `enable_thinking: false` and `max_tokens` 6000.
 
 ## [0.14.0] - 2026-08-19
 
 ### Added
-- "Odśwież" button in the skills group: re-discovers skills from the user
-  directory without restarting the app
-- "Importuj skilla..." button: pick any `.md` file (from hidden folders
-  too), validate its `name`/`formats` frontmatter and copy it into
-  `~/.config/tlumacz/skills/`
-
-### Changed
-- All file dialogs (input, output, GGUF, glossary, skill import) now show
-  hidden files and folders, so paths like `~/.config` and dot-directories
-  are reachable
+- Refresh and import actions for user skills; hidden files are available in
+  file dialogs.
 
 ## [0.13.0] - 2026-08-19
 
 ### Added
-- User skills: `*.md` files placed in `<config_dir>/skills/`
-  (e.g. `~/.config/tlumacz/skills/`) are discovered alongside the bundled
-  ones; a user skill with the same `name` overrides the bundled one
-- `save_skill()` helper to write a user skill file with `name`/`formats`
-  frontmatter into the user skills directory
-
-### Changed
-- Help tab documents how to add user skills
-- `discover_skills()` now merges bundled + user skills (user wins by name)
+- User skills from `~/.config/tlumacz/skills/`, overriding bundled skills by name.
 
 ## [0.12.0] - 2026-08-19
 
-### Changed
-- Main window split into tabs to reduce clutter on the translation screen:
-  - **Tłumaczenie** — input/output files, translate/cancel, progress, log, preview
-  - **Ustawienia** — API settings, local server, glossary, skills
-  - **Pomoc** — built-in help (Polish/English) covering LLM setup, local
-    server, glossary, skills, theme and `config.json` fields
-
 ### Added
-- Help tab with a language selector (PL/EN) rendering short usage docs
+- Translation / Settings / Help tabs and built-in PL/EN help.
 
 ## [0.11.0] - 2026-08-19
 
 ### Added
-- Skill injection for format-specific translation instructions:
-  - Bundled skills as `.md` files in the `tlumacz/skills/` package with
-    `name`/`formats` frontmatter (`markdown`, `plaintext`, `html`)
-  - "Skille" group in the GUI with a checkbox per skill; enabled skills are
-    persisted in `config.json` as `enabled_skills`
-  - When the input file's extension matches an enabled skill, its
-    instructions are appended to the translation system prompt
-- Config field: `enabled_skills` (list of skill names, validated)
-
-### Testing
-- Added `tests/` suite (33 tests) covering glossary parsing, config
-  validation, skill discovery/matching, the core translation engine
-  (chunking, prompts, cancellation) and offscreen GUI smoke tests; run with
-  `python3 -m pytest tests/`
+- Format-specific skill injection and the initial test suite.
 
 ## [0.10.0] - 2026-08-19
 
 ### Added
-- "Serwer lokalny" group in the GUI: server port, GGUF model file path (with file picker) and an "auto-start server with the app" checkbox — previously only editable via `config.json`
-- Custom translation prompt: an optional "Własny prompt" field (styl, terminologia, ton) that replaces the default system prompt; the glossary is still appended independently
-- Config field: `system_prompt`
-
-### Changed
-- `_collect_settings` reads the server settings from the GUI fields instead of copying them from the previously loaded config
+- Local server settings in GUI and custom translation prompt.
 
 ## [0.9.0] - 2026-08-19
 
 ### Added
-- Config validation: `config.json` is checked on load for unknown fields and wrong-typed values; affected fields fall back to defaults and the GUI shows a warning dialog instead of silently ignoring the problem
-
-### Changed
-- `load_settings()` now returns `(settings, warning)`; `app.py` prints the warning to stderr, `main_window.py` surfaces it in a dialog
+- Config validation with user-visible warnings.
 
 ## [0.8.0] - 2026-08-19
 
 ### Changed
-- The default translation system prompt now instructs the model to return the text unchanged when it is already in the target language, so already-Polish (or otherwise already-translated) input is not translated a second time
+- Prompt-based detection of text already written in the target language.
 
 ## [0.7.0] - 2026-08-19
 
 ### Added
-- Glossary support: a two-column CSV glossary (`source,target`) injected into the translation system prompt so the model uses fixed translations
-- New `tlumacz/glossary.py` module (`Glossary`) free of Qt dependencies: CSV parsing with header detection, `#`-prefix stripping (inflection-dictionary format), case-insensitive deduplication, identity-pair filtering and a configurable entry cap
-- New "Glosariusz" group in the GUI: file picker, live entry count, and manual entry addition (`termin` + `tłumaczenie`) that appends to the selected CSV
-- Config field: `glossary_path`
-- Only the first 300 (non-identity) glossary entries are injected per prompt, and CSV reading stops early at that cap so huge dictionaries load instantly
-- Translation log reports when a glossary is in use
+- CSV glossary support and glossary management in GUI.
 
 ## [0.6.0] - 2026-08-19
 
 ### Added
-- Theme switching in the GUI: `system` (follows the OS color scheme), `light` and `dark`, selectable via a new "Motyw" combo box in the API settings group
-- New `tlumacz/qt_gui/theme.py` module (`resolve_theme`, `apply_theme`, `load_stylesheet`)
-- Separate QSS stylesheets: `style_dark.qss` (Catppuccin Mocha) and `style_light.qss` (Catppuccin Latte)
-- The theme re-applies automatically when the OS color scheme changes while in `system` mode
-- Config field: `theme` (default `"system"`), persisted immediately on change
-
-### Changed
-- `tlumacz/qt_gui/app.py` now applies the theme from `settings.theme` instead of a single hard-coded stylesheet
+- System/light/dark theme switching.
 
 ## [0.5.1] - 2026-08-19
 
 ### Added
-- Managed local `llama-server` process: the GUI can start its own server in the background on a dedicated port and stop it when the app exits
-- New `tlumacz/server.py` module (`LlamaServer`, `ServerConfig`) free of Qt dependencies
-- Config fields: `server_port` (default 18080), `server_gguf_path`, `auto_start_server`
-- Signal handlers (SIGTERM/SIGINT) plus `atexit` cleanup so the managed server is stopped even on termination
-
-### Fixed
-- `_collect_settings` in the main window no longer drops the server config fields when saving settings on window close
-- Output path now defaults to the current input file with a language suffix (`name_pl.ext`, `name_en.ext`, ...) every time a new input file is chosen, instead of keeping the path from the last translation
-- Language change updates the default output path suffix accordingly
+- Managed local `llama-server` process and server configuration fields.
 
 ## [0.5.0] - 2026-08-18
 
 ### Added
-- Qt GUI (PySide6 / Qt Widgets) for translating files to Polish via an OpenAI-compatible API
-- Main window with input/output file selection and API settings (base URL, key, model, chunk size, temperature, target language)
-- Background translation on a QThread worker (non-blocking UI) with cancel support
-- Progress bar, live log view, and translated-output preview
-- Persistent per-user settings in `~/.config/tlumacz/config.json`
-- QSS dark theme and bundled SVG icon (package resources)
-- Python package structure (`tlumacz/`) with `pyproject.toml`, entry point `tlumacz`, `requirements.txt`, `PKGBUILD` (AUR-ready) and `.desktop` file
-
-### Changed
-- Extracted translation logic from standalone Python scripts into reusable `tlumacz/core.py`
-- Configuration is now data-driven (`TranslatorConfig`) instead of hard-coded in scripts
-- Chunk splitting respects line boundaries instead of arbitrary character slices
-
-### Technical Details
-- Worker follows the safe `QObject` + `moveToThread` pattern with explicit `quit()`/`wait()` lifecycle
-- Core module is free of Qt/CLI dependencies so it can be reused by GUI, CLI, or tests
-- `importlib.resources` loads the bundled QSS so styling works after global installation
+- Initial Qt/PySide6 GUI, background translation worker, persistent config,
+  reusable core translation engine and packaging files.
 
 ## [0.4.0] - 2025-06-20
 
 ### Added
-- Tool call status display in the status line below input box
-- Tool call results shown in message history with proper labeling
-- Real-time status updates during tool execution
-- Visual indicators for tool messages (🔧 icon and magenta color)
-- Enhanced message types to support tool call information
-
-### Changed
-- Status line now shows tool-specific status (e.g. "Reading file: ...", "Fetching URL: ...")
-- Message history displays tool results as separate messages
-- Improved visual feedback during AI tool execution
-
-### Technical Details
-- Extended Message interface with tool-specific properties
-- Added ToolCallbacks interface for status event handling
-- Enhanced StatusLine component with tool status support
-- Updated MessageHistory component for tool message rendering
-- Modified AI client to emit tool call events and status updates
+- Tool-call status display and tool result messages in the CLI.
 
 ## [0.1.0] - 2025-06-20
 
 ### Added
-- Initial release of Translator Agent CLI
-- Basic chat interface with message history
-- Interactive terminal UI using React + Ink
-- Welcome message display
-- Message input with timestamp
-- Status line for feedback
-- Exit commands support ('exit' or 'quit')
-- TypeScript support with ESM modules
-- Build and development scripts
-
-### Technical Details
-- Built with TypeScript, React, and Ink v4
-- Supports Node.js v20+
-- Uses ESM modules for modern JavaScript
-- Includes proper error handling for non-TTY environments
+- Initial Translator Agent CLI with React + Ink, message history, status line,
+  exit commands and TypeScript/ESM project structure.

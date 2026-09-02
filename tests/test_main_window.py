@@ -1,8 +1,21 @@
 """Smoke tests for the Qt main window (offscreen)."""
 
+import multiprocessing as mp
+import time
+
 import pytest
 
 pytest.importorskip("PySide6")
+
+
+def _sleep_process() -> None:
+    time.sleep(30)
+
+
+def _cancellable_process(cancel_event: mp.Event) -> None:
+    """Process that exits when cancel_event is set."""
+    while not cancel_event.is_set():
+        time.sleep(0.1)
 
 
 @pytest.fixture(scope="module")
@@ -19,6 +32,39 @@ def test_window_builds(qapp):
     window = MainWindow(server=None)
     assert window.windowTitle() == "Tłumacz"
     window.close()
+
+
+def test_worker_cancel_is_nonblocking_and_sets_event():
+    """cancel() must be non-blocking (safe for GUI thread) and set the event.
+
+    The actual process termination is cooperative: the child process checks
+    the event between chunks and exits on its own. The worker's monitoring
+    loop (TranslateWorker.run()) escalates to terminate/kill if the process
+    does not exit within ~3s. See DEBUG_QT.md item C.
+    """
+    from tlumacz.qt_gui.worker import TranslateWorker
+
+    context = mp.get_context("spawn")
+    cancel_event = context.Event()
+    worker = TranslateWorker(None, "", "")
+    worker._cancel_event = cancel_event
+
+    process = context.Process(target=_cancellable_process, args=(cancel_event,))
+    process.start()
+    worker._process = process
+
+    # cancel() must return immediately (non-blocking)
+    started = time.monotonic()
+    worker.cancel()
+    elapsed = time.monotonic() - started
+    assert elapsed < 0.5, "cancel() should be non-blocking"
+
+    # The event should be set, which will cause the process to exit
+    assert cancel_event.is_set()
+
+    # Wait for the cooperative exit (should happen within ~0.2s)
+    process.join(timeout=2.0)
+    assert not process.is_alive(), "process should exit after cancel_event is set"
 
 
 def test_skills_checkboxes_and_persistence(qapp, config_home):

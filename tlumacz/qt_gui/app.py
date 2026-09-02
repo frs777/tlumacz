@@ -9,6 +9,7 @@ Run with::
 from __future__ import annotations
 
 import atexit
+import logging
 import signal
 import sys
 
@@ -21,6 +22,13 @@ from .theme import apply_theme
 
 
 def main() -> int:
+    # Configure logging for debugging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        stream=sys.stderr
+    )
+    
     settings, config_warning = load_settings()
     if config_warning:
         print(f"UWAGA (konfiguracja): {config_warning}", file=sys.stderr)
@@ -34,6 +42,8 @@ def main() -> int:
         server = LlamaServer(
             ServerConfig(
                 port=settings.server_port,
+                parallel=settings.server_parallel,
+                compute_mode=settings.server_compute_mode,
                 gguf_path=settings.server_gguf_path,
                 chat_template=chat_template,
             )

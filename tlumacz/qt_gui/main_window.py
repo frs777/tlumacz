@@ -8,8 +8,11 @@ Tabs (top to bottom):
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import QDir, QElapsedTimer, QSettings, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
@@ -60,7 +63,7 @@ from .config import (
     save_settings,
 )
 from .theme import apply_theme
-from .worker import TranslationThread
+from .worker import ServerRestartThread, TranslationThread
 
 try:  # optional; only used when the managed server is running
     from ..server import LlamaServer, ServerConfig
@@ -108,6 +111,21 @@ LANGUAGE_SUFFIXES = {
 class MainWindow(QMainWindow):
     """Top-level application window."""
 
+    @staticmethod
+    def _is_thread_running(thread_obj) -> bool:
+        """Safely check if a thread is running, handling deleted C++ objects.
+        
+        Returns False if the thread object is None or if the underlying
+        QThread has been deleted by deleteLater.
+        """
+        if thread_obj is None:
+            return False
+        try:
+            return thread_obj.thread.isRunning()
+        except RuntimeError:
+            # QThread was deleted by deleteLater
+            return False
+
     def __init__(self, server: object | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Tłumacz")
@@ -124,6 +142,8 @@ class MainWindow(QMainWindow):
         self._settings, config_warning = load_settings()
         self._server = server
         self._thread: TranslationThread | None = None
+        self._server_restart_thread: ServerRestartThread | None = None
+        self._pending_server_settings: AppSettings | None = None
         self._elapsed_timer = QElapsedTimer()
         self._elapsed_display_timer = QTimer(self)
         self._elapsed_display_timer.setInterval(100)
@@ -526,8 +546,8 @@ jasny lub ciemny.</p>
 <code>glossary_path</code>, <code>system_prompt</code>,
 <code>enabled_skills</code>, <code>skip_line_patterns</code>,
 <code>server_port</code>, <code>server_gguf_path</code>,
-<code>server_chat_template</code>, <code>auto_start_server</code>,
-<code>model_profiles</code>, <code>last_input</code>,
+<code>server_chat_template</code>, <code>server_parallel</code>,
+<code>auto_start_server</code>, <code>model_profiles</code>, <code>last_input</code>,
 <code>last_output</code>.</p>
 <p>Uszkodzony plik lub pola o błędnym typie są naprawiane wartościami
 domyślnymi, a program pokazuje stosowny komunikat. Przycisk
@@ -577,6 +597,9 @@ większy = mniej wywołań, ale ryzyko obcięcia i utraty spójności.</td></tr>
 <tr><td>Szablon czatu</td><td>Sposób formatowania rozmowy z modelem.</td>
 <td>Auto (jinja), dla transl. gemma: chatml</td>
 <td>chatml rozwiązuje modele z uszkodzonym szablonem jinja.</td></tr>
+<tr><td>Równoległość (parallel)</td><td>Liczba równoległych slotów llama-server.</td>
+<td><b>1–8</b></td>
+<td>Większa wartość pozwala obsługiwać kilka chunków jednocześnie, ale zwiększa zużycie zasobów.</td></tr>
 <tr><td>Motyw</td><td>Wygląd okna.</td>
 <td>system / jasny / ciemny</td>
 <td>Kwestia preferencji; „system" podąża za pulpitem.</td></tr>
@@ -819,6 +842,7 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         self.server_port.setObjectName("serverPort")
         self.server_port.setRange(1024, 65535)
         self.server_port.setSingleStep(100)
+
         self.server_port.setToolTip(
             "Port, na którym ma nasłuchiwać serwer lokalny.\n"
             "Musi być wolny i różny od innych usług (np. 18080)."
@@ -848,6 +872,26 @@ in a browser or editor and use “Print → Save as PDF”.</p>
             "Odznacz, jeśli używasz własnego, już działającego serwera."
         )
 
+        self.cache_clear_after_translation = QCheckBox(
+            "Czyść cache po każdym tłumaczeniu"
+        )
+        self.cache_clear_after_translation.setObjectName("cacheClearAfterTranslation")
+        self.cache_clear_after_translation.setToolTip(
+            "Automatycznie czyść cache tłumaczeń po zakończeniu każdego tłumaczenia.\n"
+            "Zalecane przy testowaniu wydajności i dokładności.\n"
+            "Odznacz aby zachować cache między tłumaczeniami (szybsze ponowne tłumaczenie tego samego pliku)."
+        )
+
+        self.server_compute_mode = QComboBox()
+        self.server_compute_mode.setObjectName("serverComputeMode")
+        self.server_compute_mode.addItem("GPU", "gpu")
+        self.server_compute_mode.addItem("CPU", "cpu")
+        self.server_compute_mode.setToolTip(
+            "Tryb obliczeń llama-server. GPU używa dostępnego akceleratora; "
+            "CPU wyłącza warstwy GPU i pozwala wykorzystać procesor.\n"
+            "Zmiana wymaga restartu serwera."
+        )
+
         self.server_chat_template = QComboBox()
         self.server_chat_template.setObjectName("serverChatTemplate")
         self.server_chat_template.addItem("Auto (jinja)", "")
@@ -860,9 +904,26 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         )
 
         form.addRow("Port:", self.server_port)
+        form.addRow("Obliczenia serwera:", self.server_compute_mode)
         form.addRow("Plik modelu (GGUF):", gguf_row)
         form.addRow("Szablon czatu:", self.server_chat_template)
         form.addRow(self.auto_start_server)
+        form.addRow(self.cache_clear_after_translation)
+
+        self.restart_server_btn = QPushButton("Restart serwera")
+        self.restart_server_btn.setObjectName("restartServerBtn")
+        self.restart_server_btn.setToolTip(
+            "Zatrzymaj zarządzany llama-server i uruchom go ponownie "
+            "z aktualnymi ustawieniami."
+        )
+        self.restart_server_btn.clicked.connect(self._on_restart_server)
+        self.restart_server_btn.setEnabled(self._server is not None)
+        if self._server is None and self._settings.auto_start_server:
+            # Server was supposed to start but failed (e.g., library error)
+            self.restart_server_btn.setToolTip(
+                "Serwer nie wystartował przy starcie programu. Sprawdź logi i uruchom program ponownie."
+            )
+        form.addRow(self.restart_server_btn)
         return box
 
     # ------------------------------------------------------------- helpers --
@@ -883,11 +944,13 @@ in a browser or editor and use “Print → Save as PDF”.</p>
             ),
             chunk_size=self.chunk_size.value(),
             temperature=self.temperature.value(),
+            parallel=1,
             target_language=self.language.currentText(),
             glossary_path=self.glossary_path.text().strip() or None,
             system_prompt=self.prompt_edit.toPlainText().strip() or None,
             enabled_skills=self._enabled_skill_names(),
             skip_line_patterns=self._skip_pattern_list(),
+            cache_clear_after_translation=self.cache_clear_after_translation.isChecked(),
         )
 
     def _collect_settings(self) -> AppSettings:
@@ -907,9 +970,11 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         settings.enabled_skills = self._enabled_skill_names()
         settings.skip_line_patterns = self._skip_pattern_list()
         settings.server_port = self.server_port.value()
+        settings.server_compute_mode = self.server_compute_mode.currentData()
         settings.server_gguf_path = self.server_gguf_path.text().strip()
         settings.server_chat_template = self.server_chat_template.currentData()
         settings.auto_start_server = self.auto_start_server.isChecked()
+        settings.cache_clear_after_translation = self.cache_clear_after_translation.isChecked()
         return settings
 
     def _load_settings_into_ui(self) -> None:
@@ -943,10 +1008,13 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         for skill, checkbox in zip(self._skills, self._skill_checkboxes):
             checkbox.setChecked(skill.name in enabled)
         self.server_port.setValue(s.server_port)
+        mode_index = self.server_compute_mode.findData(s.server_compute_mode)
+        self.server_compute_mode.setCurrentIndex(mode_index if mode_index >= 0 else 0)
         self.server_gguf_path.setText(s.server_gguf_path)
         template_index = self.server_chat_template.findData(s.server_chat_template)
         self.server_chat_template.setCurrentIndex(template_index)
         self.auto_start_server.setChecked(s.auto_start_server)
+        self.cache_clear_after_translation.setChecked(s.cache_clear_after_translation)
 
     def _append_log(self, message: str) -> None:
         self.log_view.appendPlainText(message)
@@ -1137,8 +1205,100 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         self._on_glossary_path_edited()
         self._append_log(f"Glosariusz: dodano „{source} -> {target}” do {path}")
 
+    def _on_restart_server(self) -> None:
+        """Restart the managed llama-server using the current GUI settings.
+
+        Runs off the UI thread (see DEBUG_QT.md item B): ``_wait_ready()``
+        can poll for up to 60s and ``stop()`` can block up to 15s, both of
+        which would otherwise freeze the window.
+        """
+        logger.info("_on_restart_server() called")
+        if self._server is None:
+            logger.warning("_on_restart_server(): server is None")
+            QMessageBox.warning(
+                self,
+                "Serwer lokalny",
+                'Zarządzany serwer nie jest uruchomiony. Włącz „Uruchamiaj serwer razem z programem" i uruchom program ponownie.',
+            )
+            return
+        if self._is_thread_running(self._thread):
+            logger.info("_on_restart_server(): stopping active translation thread")
+            self._append_log("Restart serwera: zatrzymywanie aktywnego workera...")
+            if not self._thread.stop():
+                self._append_log("Restart serwera: worker nie zakończył się łagodnie.")
+        self._thread = None
+        # Clean up previous restart thread if it's done
+        if self._is_thread_running(self._server_restart_thread):
+            logger.info("_on_restart_server(): restart already in progress")
+            self._append_log("Restart serwera już trwa.")
+            return
+        # Previous thread finished but wasn't cleaned up - clear it
+        if self._server_restart_thread is not None:
+            logger.info("_on_restart_server(): cleaning up finished restart thread")
+            self._server_restart_thread = None
+
+        settings = self._collect_settings()
+        self._pending_server_settings = settings
+        config_updates = {
+            "port": settings.server_port,
+            "parallel": 1,
+            "compute_mode": settings.server_compute_mode,
+            "gguf_path": settings.server_gguf_path,
+            "chat_template": settings.server_chat_template or "",
+        }
+        logger.info(f"_on_restart_server(): config_updates={config_updates}")
+        self.restart_server_btn.setEnabled(False)
+        self._append_log("Restart llama-server: zatrzymywanie i uruchamianie ponownie...")
+        self._server_restart_thread = ServerRestartThread(self._server, config_updates)
+        self._server_restart_thread.succeeded.connect(self._on_server_restart_succeeded)
+        self._server_restart_thread.failed.connect(self._on_server_restart_failed)
+        self._server_restart_thread.start()
+        logger.info("_on_restart_server(): restart thread started")
+
+    def _on_server_restart_succeeded(self, worked: str | None) -> None:
+        logger.info(f"_on_server_restart_succeeded() called, worked={worked}")
+        settings = self._pending_server_settings or self._settings
+        if worked and worked != settings.server_chat_template:
+            settings.model_profiles[settings.server_gguf_path] = {"chat_template": worked}
+        self._settings = settings
+        save_settings(settings)
+        server = self._server
+        # Give the server a moment to fully initialize after restart
+        # Use QTimer instead of time.sleep() to avoid blocking UI thread
+        QTimer.singleShot(2000, lambda: self._check_server_after_restart(server))
+
+    def _check_server_after_restart(self, server) -> None:
+        """Check if server is running after restart (called after 2s delay)."""
+        logger.info(f"_check_server_after_restart() called, server={server}")
+        if server is not None:
+            is_running = server.is_running()
+            logger.info(f"_check_server_after_restart(): is_running()={is_running}")
+            if is_running:
+                self.base_url.setText(server.config.base_url)
+                self.model.setText(SERVER_MODEL_ALIAS)
+                self._append_log(f"llama-server uruchomiony ponownie: {server.config.base_url}")
+                QMessageBox.information(
+                    self, "Serwer lokalny", "Serwer został pomyślnie uruchomiony ponownie."
+                )
+            else:
+                self._append_log("BŁĄD restartu serwera: proces wystartował, ale API nie odpowiada.")
+                logger.error("_check_server_after_restart(): server.is_running() returned False")
+                QMessageBox.critical(
+                    self, "Serwer lokalny", "Nie udało się uruchomić serwera ponownie: API nie odpowiada."
+                )
+        else:
+            logger.error("_check_server_after_restart(): server is None")
+        self.restart_server_btn.setEnabled(True)
+        self._server_restart_thread = None
+
+    def _on_server_restart_failed(self, message: str) -> None:
+        self._append_log(f"BŁĄD restartu serwera: {message}")
+        QMessageBox.critical(self, "Serwer lokalny", f"Nie udało się uruchomić serwera ponownie:\n{message}")
+        self.restart_server_btn.setEnabled(True)
+        self._server_restart_thread = None
+
     def _on_restore_defaults(self) -> None:
-        if self._thread is not None and self._thread.isRunning():
+        if self._is_thread_running(self._thread):
             QMessageBox.warning(
                 self,
                 "Przywracanie",
@@ -1254,10 +1414,67 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         self._thread.start()
 
     def _on_cancel(self) -> None:
-        if self._thread is not None:
+        if self._is_thread_running(self._thread):
             self._append_log("Anulowanie...")
             self._thread.cancel()
             self.cancel_btn.setEnabled(False)
+            # cancel() is non-blocking: it sets a shared event that (a) closes
+            # the in-flight HTTP client so a blocked chunk unblocks quickly
+            # and (b) is checked between chunks. The worker's own monitoring
+            # loop (in TranslateWorker.run(), on the background thread) then
+            # escalates to terminate/kill the child process if it does not
+            # exit on its own within ~3s — see DEBUG_QT.md item C. No
+            # QThread.terminate() is used for this interactive path.
+            # Give that a bit of margin before checking on the server.
+            QTimer.singleShot(3500, self._ensure_server_after_cancel)
+
+    def _ensure_server_after_cancel(self) -> None:
+        """Restart the managed llama-server if cancellation left it offline.
+
+        Runs off the UI thread, same as :meth:`_on_restart_server` (see
+        DEBUG_QT.md item B).
+        """
+        server = self._server
+        if server is None:
+            return
+        if server.is_running():
+            self._append_log("llama-server po anulowaniu nadal działa.")
+            return
+        if self._is_thread_running(self._server_restart_thread):
+            return
+        settings = self._collect_settings()
+        self._pending_server_settings = settings
+        config_updates = {
+            "port": settings.server_port,
+            "parallel": 1,
+            "compute_mode": settings.server_compute_mode,
+            "gguf_path": settings.server_gguf_path,
+            "chat_template": settings.server_chat_template or "",
+        }
+        self._append_log("llama-server po anulowaniu nie odpowiada — ponowne uruchamianie...")
+        self._server_restart_thread = ServerRestartThread(server, config_updates)
+        self._server_restart_thread.succeeded.connect(self._on_cancel_server_restart_succeeded)
+        self._server_restart_thread.failed.connect(self._on_cancel_server_restart_failed)
+        self._server_restart_thread.start()
+
+    def _on_cancel_server_restart_succeeded(self, worked: str | None) -> None:
+        settings = self._pending_server_settings or self._settings
+        if worked and worked != settings.server_chat_template:
+            settings.model_profiles[settings.server_gguf_path] = {"chat_template": worked}
+        self._settings = settings
+        save_settings(settings)
+        server = self._server
+        if server is not None and server.is_running():
+            self.base_url.setText(server.config.base_url)
+            self.model.setText(SERVER_MODEL_ALIAS)
+            self._append_log("llama-server ponownie uruchomiony po anulowaniu.")
+        else:
+            self._append_log("BŁĄD: llama-server nadal nie odpowiada po restarcie.")
+        self._server_restart_thread = None
+
+    def _on_cancel_server_restart_failed(self, message: str) -> None:
+        self._append_log(f"BŁĄD restartu llama-server po anulowaniu: {message}")
+        self._server_restart_thread = None
 
     def _on_progress(self, current: int, total: int) -> None:
         percent = int(current * 100 / total) if total else 0
@@ -1269,11 +1486,21 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         self.progress_bar.setValue(100)
         self._append_log(f"Zakończono: {output_path}")
         self._show_preview(output_path)
+        self._clear_finished_thread()
 
     def _on_failed(self, message: str) -> None:
         self._set_idle_state()
         self._append_log(f"BŁĄD: {message}")
+        self._clear_finished_thread()
         QMessageBox.critical(self, "Błąd tłumaczenia", message)
+
+    def _clear_finished_thread(self) -> None:
+        thread = self._thread
+        if thread is not None:
+            # Wait a bit for the thread to fully stop
+            if self._is_thread_running(thread):
+                thread.thread.wait(1000)  # Wait up to 1 second
+            self._thread = None
 
     def _show_preview(self, output_path: str) -> None:
         try:
@@ -1284,7 +1511,11 @@ in a browser or editor and use “Print → Save as PDF”.</p>
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if self._thread is not None:
-            self._thread.stop()
+            stopped = self._thread.stop()
+            if not stopped:
+                self._append_log(
+                    "Ostrzeżenie: wątek tłumaczenia został zatrzymany siłą przy zamykaniu."
+                )
         if self._config_file_present or (config_dir() / "config.json").is_file():
             save_settings(self._collect_settings())
         super().closeEvent(event)

@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import time
 
 import pytest
 
@@ -105,7 +106,7 @@ def test_default_prompt_is_language_generic():
 def test_default_prompt_covers_multilingual_input():
     config = TranslatorConfig(target_language="Polish")
     prompt = config.system_prompt
-    assert "Translate all passages that are not already in Polish" in prompt
+    assert "Translate ALL passages that are not already in Polish" in prompt
     assert "must be translated" in prompt
     assert "preserving Markdown formatting" in prompt
 
@@ -124,7 +125,7 @@ def test_custom_prompt_replaces_default_but_glossary_appended(tmp_path):
 
 def test_translate_file_uses_skill_for_matching_format(tmp_path):
     client, _ = _make_fake_client()
-    config = TranslatorConfig(enabled_skills=["Markdown"], chunk_size=200)
+    config = TranslatorConfig(enabled_skills=["Markdown"], chunk_size=200, cache_enabled=False)
     translator = Translator(config)
     translator.client = client
 
@@ -141,7 +142,7 @@ def test_translate_file_uses_skill_for_matching_format(tmp_path):
 
 def test_translate_file_skips_skill_for_other_format(tmp_path):
     client, _ = _make_fake_client()
-    config = TranslatorConfig(enabled_skills=["Markdown"], chunk_size=200)
+    config = TranslatorConfig(enabled_skills=["Markdown"], chunk_size=200, cache_enabled=False)
     translator = Translator(config)
     translator.client = client
 
@@ -158,7 +159,7 @@ def test_translate_file_skips_skill_for_other_format(tmp_path):
 
 def test_translate_file_cancellation(tmp_path):
     client, _ = _make_fake_client()
-    translator = Translator(TranslatorConfig(chunk_size=10))
+    translator = Translator(TranslatorConfig(cache_enabled=False,chunk_size=10))
     translator.client = client
     source = tmp_path / "in.txt"
     source.write_text("a" * 100, encoding="utf-8")
@@ -171,8 +172,56 @@ def test_translate_file_cancellation(tmp_path):
         )
 
 
+def test_cancel_interrupts_active_request(tmp_path):
+    import threading
+
+    class BlockingClient:
+        def __init__(self):
+            self.closed = threading.Event()
+            self.started = threading.Event()
+
+        class chat:
+            pass
+
+        def close(self):
+            self.closed.set()
+
+    client = BlockingClient()
+    completions = type("Co", (), {})()
+
+    def create(**kwargs):
+        client.started.set()
+        if not client.closed.wait(2):
+            raise AssertionError("request was not interrupted")
+        raise RuntimeError("request interrupted")
+
+    completions.create = create
+    client.chat = type("Ch", (), {"completions": completions})()
+
+    translator = Translator(TranslatorConfig(cache_enabled=False))
+    from unittest.mock import patch
+
+    errors = []
+    def run():
+        try:
+            translator._translate_chunk("tekst", "system prompt")
+        except Exception as exc:  # cancellation is expected to interrupt the request
+            errors.append(exc)
+
+    thread = threading.Thread(target=run)
+    with patch("tlumacz.core.openai.OpenAI", return_value=client):
+        thread.start()
+    assert client.started.wait(1)
+    translator.cancel()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert client.closed.is_set()
+    assert errors
+
+
 def test_translate_file_missing_input(tmp_path):
-    translator = Translator(TranslatorConfig())
+    translator = Translator(TranslatorConfig(cache_enabled=False,))
     with pytest.raises(FileNotFoundError):
         translator.translate_file(
             str(tmp_path / "nope.txt"), str(tmp_path / "out.txt")
@@ -180,7 +229,7 @@ def test_translate_file_missing_input(tmp_path):
 
 
 def test_effective_skip_patterns_combines_skill_and_custom():
-    translator = Translator(TranslatorConfig(skip_line_patterns=[r"^CUSTOM$"]))
+    translator = Translator(TranslatorConfig(cache_enabled=False,skip_line_patterns=[r"^CUSTOM$"]))
     assert translator._effective_skip_patterns((r"^SKILL$",)) == [
         r"^SKILL$",
         r"^CUSTOM$",
@@ -188,12 +237,12 @@ def test_effective_skip_patterns_combines_skill_and_custom():
 
 
 def test_effective_skip_patterns_defaults_when_skill_empty():
-    translator = Translator(TranslatorConfig())
+    translator = Translator(TranslatorConfig(cache_enabled=False,))
     assert translator._effective_skip_patterns(()) == list(DEFAULT_SKIP_PATTERNS)
 
 
 def test_effective_skip_patterns_deduplicates():
-    translator = Translator(TranslatorConfig())
+    translator = Translator(TranslatorConfig(cache_enabled=False,))
     eff = translator._effective_skip_patterns(tuple(DEFAULT_SKIP_PATTERNS))
     assert eff == list(DEFAULT_SKIP_PATTERNS)
 
@@ -218,6 +267,48 @@ def test_translate_file_uses_skill_skip_patterns(tmp_path, monkeypatch):
     assert "PRZETŁUMACZONE" in result
     assert any("skill: TestSkip" in line for line in logs)
 
+
+def test_translate_file_parallel_preserves_order(tmp_path):
+    import threading
+
+    calls = []
+    lock = threading.Lock()
+
+    def create(**kwargs):
+        content = kwargs["messages"][-1]["content"]
+        with lock:
+            calls.append(content)
+        time.sleep(0.02 if "CHUNK 1" in content else 0.01)
+        choice = type("C", (), {"message": type("M", (), {"content": content})()})()
+        return type("R", (), {"choices": [choice]})()
+
+    completions = type("Co", (), {"create": staticmethod(create)})()
+    chat = type("Ch", (), {"completions": completions})()
+    client = type("Cl", (), {"chat": chat, "calls": calls})()
+
+    translator = Translator(TranslatorConfig(cache_enabled=False,chunk_size=20, parallel=3))
+    translator.client = client
+    source = tmp_path / "in.txt"
+    source.write_text("CHUNK 1 123456789\nCHUNK 2 123456789\nCHUNK 3 123456789\n", encoding="utf-8")
+    output = tmp_path / "out.txt"
+
+    translator.translate_file(str(source), str(output))
+    result = output.read_text(encoding="utf-8")
+    assert result.index("CHUNK 1") < result.index("CHUNK 2") < result.index("CHUNK 3")
+    assert len(calls) >= 2
+
+
+def test_translate_file_parallel_disabled_matches_sequential(tmp_path):
+    client, calls = _make_fake_client("OK")
+    translator = Translator(TranslatorConfig(cache_enabled=False, chunk_size=10, parallel=1))
+    translator.client = client
+    source = tmp_path / "in.txt"
+    source.write_text("abcdefghijabcdefghij", encoding="utf-8")
+    output = tmp_path / "out.txt"
+
+    translator.translate_file(str(source), str(output))
+    assert output.read_text(encoding="utf-8").count("OK") == 2
+    assert len(calls) == 2
 
 def test_translate_file_binary_epub_roundtrip(tmp_path):
     import io
@@ -266,7 +357,7 @@ def test_translate_file_binary_epub_roundtrip(tmp_path):
     source.write_bytes(buf.getvalue())
     output = tmp_path / "book_pl.epub"
 
-    translator = Translator(TranslatorConfig(enabled_skills=["HTML"]))
+    translator = Translator(TranslatorConfig(cache_enabled=False,enabled_skills=["HTML"]))
     translator.client = client
     translator.translate_file(str(source), str(output), log_callback=lambda _m: None)
 
@@ -363,7 +454,7 @@ def test_translate_text_empty_skip_patterns_translates_yaml(tmp_path):
     calls: list[dict] = []
     completions = type("Co", (), {"create": staticmethod(_identity)})()
     chat = type("Ch", (), {"completions": completions})()
-    translator = Translator(TranslatorConfig(chunk_size=100))
+    translator = Translator(TranslatorConfig(cache_enabled=False,chunk_size=100))
     translator.client = type("Cl", (), {"chat": chat, "calls": calls})()
 
     text = "---\nname: foo\nlicense: MIT\n---\ntreść do przetłumaczenia"

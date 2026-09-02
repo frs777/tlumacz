@@ -1,229 +1,112 @@
 # Podsumowanie projektu — Tłumacz
 
-**Data:** 20 sierpnia 2026
-**Repozytorium:** https://github.com/frs777/tlumacz (publiczne)
-**Wersja:** 0.19.0
-**Paczka w moje-repo:** `tlumacz-0.5.1-1-any` (Arch, `/home/frs/RepoArch/x86_64`) — do odświeżenia
+**Data:** 2 września 2026
+**Repozytorium:** https://github.com/frs777/tlumacz
+**Wersja:** 0.19.1
+**Status:** wersja robocza/testowa; brak publikacji 0.19.1 w publicznym AUR.
 
 ---
 
-## Co to jest
+## Aktualny stan
 
-Narzędzie do tłumaczenia dokumentów oparte na AI z interfejsem graficznym
-**Qt (PySide6)**. Tłumaczy pliki Markdown/tekstowe na wybrany język (domyślnie
-polski) przez dowolne API zgodne z OpenAI — w tym przez wbudowany, zarządzany
-serwer lokalny `llama-server` (GGUF).
+Projekt jest aplikacją Qt/PySide6 do tłumaczenia dokumentów przez API zgodne z OpenAI oraz przez zarządzany lokalny `llama-server` z modelem GGUF.
+
+Najważniejsza funkcja projektu — **tłumaczenie** — działa, ale jakość zależy od modelu. W testach Hy-MT2-1.8B-Q4_K_S okazał się bardzo szybki, lecz przy dokumentach wielojęzycznych pozostawia część treści w języku źródłowym. Większe modele dawały lepszą jakość, ale były wolniejsze.
+
+### Testy formatów
+
+- **Markdown/TXT/HTML:** działają, ale HTML i dokumenty wielojęzyczne wymagają dalszego wzmocnienia promptów.
+- **DOCX:** round-trip zachowuje strukturę dokumentu; jakość językowa Hy-MT2 jest nierówna.
+- **ODT:** round-trip działa; główne kryterium oceny to zachowanie struktury/formatowania.
+- **EPUB:** round-trip działa i zachowuje strukturę archiwum, ale test wielojęzyczny ujawnił pozostawione fragmenty chińskie/angielskie.
+
+### Modele
+
+- **Hy-MT2-1.8B-Q4_K_S** — obecny szybki model testowy; dobry do testów pipeline'u i wydajności, ale prawdopodobnie za słaby do docelowej jakości.
+- **TranslateGemma** — lepsza jakość w dotychczasowych testach, lecz wyraźnie wolniejszy.
+- **Salamandra 2B** — odłożona; testy sugerowały potrzebę specjalnej obsługi.
+
+---
 
 ## Zrealizowane funkcje
 
-### Interfejs (Qt GUI, v0.5.0 → v0.12.0)
-- Wybór plików wejściowych/wyjściowych, ustawienia API (adres, klucz, model,
-  rozmiar fragmentów, temperatura, język docelowy)
-- Tłumaczenie w tle (QThread, `worker.py`) — UI nigdy się nie zawiesza;
-  anulowanie tłumaczenia, pasek postępu, log na żywo, podgląd wyniku
-- Trwałe ustawienia w `~/.config/tlumacz/config.json` + walidacja pliku
-  (nieznane pola / złe typy wracają do wartości domyślnych z komunikatem)
-- Zakładki: **Tłumaczenie / Ustawienia / Pomoc** (v0.12.0)
-- Motyw dzień / noc / system (`theme.py`, QSS Catppuccin, v0.6.0)
-- Własny prompt tłumaczenia (`system_prompt`, v0.10.0)
-- Pomoc PL/EN wbudowana w GUI z przełącznikiem języka (v0.12.0)
+### GUI
 
-### Zarządzany serwer lokalny (v0.5.1 → v0.17.0)
-- `tlumacz/server.py` — `LlamaServer` startuje `llama-server` w tle na
-  wydzielonym porcie ze wskazanym plikiem **GGUF**; sprzątanie przez
-  `atexit` + SIGTERM/SIGINT
-- Alias modelu `local` (`SERVER_MODEL_ALIAS`) — API zawsze adresuje model jako
-  `local`; `--jinja` w domyślnej komendzie; `ctx-size 8192` (v0.15.0)
-- **Szablon czatu** (`server_chat_template`, v0.16.0): modele z nieparsowalnym
-  szablonem jinja (np. `translategemma-4b`) uruchamiane przez
-  `--no-jinja --chat-template chatml`
-- **Odporność na zmianę modelu** (v0.17.0): autofallback startu — próba
-  wybranego szablonu, przy niepowodzeniu automatyczny retry z kolejnymi
-  kandydatami (`chatml` / jinja); udany szablon zapamiętywany w
-  `model_profiles` (w config.json) pod ścieżką GGUF i używany od razu przy
-  następnym starcie
-- Wyłączanie trybu „myślenia” modelu: `chat_template_kwargs` z
-  `enable_thinking: false` + max_tokens 6000 (v0.15.0, ~5× szybciej dla gemma)
+- wybór wejścia/wyjścia i ustawień API,
+- tłumaczenie w QThread bez blokowania GUI,
+- anulowanie, pasek postępu, log i podgląd,
+- trwały `config.json` z walidacją i backupami,
+- zakładki Tłumaczenie / Ustawienia / Pomoc,
+- motywy system/light/dark,
+- własny prompt,
+- **stoper tłumaczenia** — zaimplementowany,
+- pomoc PL/EN,
+- tooltipy i tabela parametrów,
+- **checkbox "Czyść cache po tłumaczeniu"** — domyślnie włączony,
+- **przycisk "Restart serwera"** — naprawiony, działa po tłumaczeniu (naprawiono błąd `RuntimeError: QThread already deleted`).
 
-### Preprocessing tłumaczenia (v0.16.0 → v0.19.0, `tlumacz/preprocess.py`)
-- **Ochrona kodu/URL/tagów** — bloki ```, `` inline, URL-e oraz tagi
-  XML/HTML (`<...>`) maskowane placeholderami `⟦PROT_n⟧` i przywracane po
-  tłumaczeniu (techniczny content i znaczniki zostają 1:1); tagi chronione
-  przed URL-ami, więc URL-e wewnątrz atrybutów XML też są bezpieczne
-- **Filtrowanie linii** — linie pasujące do wzorców regex (YAML-metadane:
-  `license:`, `author:`, `version:` itd.) kopiowane do wyniku bez tłumaczenia
-- **Wzorce per skilla** (v0.17.0): opcjonalne pole `skip_patterns` we
-  frontmatterze skilla używane automatycznie dla pasującego formatu; pole
-  regex w GUI przeniesione do sekcji „Zaawansowane" (deduplikacja wzorców:
-  skilla → domyślne → własne użytkownika)
-- **Chunkowanie sekcjami** — tekst dzielony przy nagłówkach Markdown zamiast
-  w połowie tabel; małe sekcje grupują się w jeden fragment, split tylko przy
-  przepełnieniu (`chunk_size`) lub nagłówku po dużej sekcji
-- **Chunkowanie XML po znakach** (`split_xml_segments`, v0.19.0) — dla
-  XML/HTML tekst dzielony po znakach bez rozcinania placeholderów `⟦PROT_n⟧`
-  (naprawia gubienie tagów w wieloliniowym XML, np. ODT `content.xml`)
-- Czyszczenie przeciekających tokenów końca/startu szablonu (`<|im_end|>`,
-  `<|im_start|>`, `</s>`...)
+### Zarządzany llama-server
 
-### Ekstrakcja formatów binarnych (v0.17.0 → v0.19.0, `tlumacz/extract.py`)
-- PDF (narzędzie `pdftotext`/poppler, fallback: `pypdf`), DOCX (**pandoc**),
-  ODT (stdlib: zipfile + XML), EPUB (stdlib: zipfile + strip HTML)
-- Zależności opcjonalne — czytelny komunikat o braku biblioteki
-- **Round-trip EPUB / DOCX / ODT (v0.18/0.19)** — wynik w oryginalnym formacie
-  1:1: archiwum rozpakowywane, tłumaczony tylko tekst wewnątrz węzłów XML
-  (`w:t` dla DOCX, `text:*` dla ODT, XHTML dla EPUB); struktura, style,
-  tabele, deklaracja XML i wszystkie `xmlns` oraz pliki nietreściowe (media,
-  rels, styles) zachowane bez zmian. Pliki bez tekstu (puste `comments.xml`)
-  kopiowane bez wysyłki do modelu.
-- **PDF** — jako dokument trudny do odtworzenia 1:1: tekst wyodrębniany
-  (`pdftotext`/pypdf), wynik zapisywany jako Markdown (`.md`); powrót do
-  PDF przez „Drukuj → Zapisz jako PDF". **OCR dla skanów (Tesseract) w planie.**
+`tlumacz/server.py` zarządza procesem `llama-server`, ścieżką GGUF, portem i profilem szablonu rozmowy. Obsługiwany jest autofallback `jinja`/`chatml`, a działający szablon jest zapisywany w `model_profiles`.
 
-### Glosariusz / słownik (v0.7.0)
-- `tlumacz/glossary.py` — CSV dwie kolumny, detekcja nagłówka, `#`-prefixy,
-  deduplikacja, limit 300 wpisów na prompt (szybki odczyt wielkich słowników)
-- GUI: wybór pliku CSV, licznik wpisów, dodawanie par z poziomu programu
+**Obecne zachowanie:** zarządzany serwer startuje przy uruchomieniu aplikacji i jest zatrzymywany przy jej zamknięciu.
 
-### Skille formatów (v0.11.0 → v0.17.0)
-- Skille `.md` (frontmatter `name`, `formats`) w `tlumacz/skills/`
-  (markdown, plaintext, html, **pdf, docx, odt, epub** — v0.17.0)
-  wstrzykiwane do promptu przy pasującym rozszerzeniu
-- **`skip_patterns` we frontmatterze** (v0.17.0) — wzorce pomijanych linii
-  dla danego formatu, używane automatycznie (skilla Markdown niesie wzorce YAML)
-- Własne skille użytkownika w `~/.config/tlumacz/skills/` (nadpisują wbudowane
-  o tej samej nazwie), przyciski **Odśwież** / **Importuj skilla** / **Nowy
-  skilla** (v0.13/0.14/0.17); **`SKILL_TEMPLATE.md`** — szablon z dokumentacją
-  pól frontmatteru, kopiowany przez „Nowy skilla..." (nie wykrywany jako skilla)
-- Wybór w GUI (grupa „Skille"), zapis do `enabled_skills`
+**Restart serwera:** przycisk w Ustawieniach zatrzymuje serwer i uruchamia go ponownie z aktualnymi parametrami, bez restartowania GUI. Po restarcie sprawdza API `/v1/models` i zgłasza sukces/błąd.
 
-### Ustawienia i pomoc (v0.17.0)
-- **Przywracanie domyślnych** — przycisk „Przywróć domyślne": kopia
-  `config.backup-<data>.json`, zapis wartości domyślnych z zachowaniem
-  ścieżek (`last_input`, `last_output`, `glossary_path`); uszkodzony
-  config.json też jest najpierw backupowany
-- **Tooltipy przy wszystkich polach** oraz **tabela parametrów** w zakładce
-  Pomoc (co robi / ile ustawić / dlaczego) PL + EN; punkt o formatach
-  binarnych opisuje round-trip EPUB/DOCX/ODT do oryginalnego formatu
+---
 
-### Silnik tłumaczenia (v0.8.0 → v0.19.0)
-- `core.py` (bez zależności Qt) — chunking, glosariusz, skille, `max_tokens`,
-  wykrywanie czy tekst już jest w języku docelowym (przez prompt, v0.8.0)
-- `translate_file` używa potoku: `protect` → `split_segments` → tłumaczenie →
-  `restore`, z segmentami `keep` kopiowanymi wprost (v0.16.0)
-- **`_translate_document_xml` (v0.19.0)** — dla DOCX/ODT tłumaczy tylko tekst
-  węzłów XML (`w:t` / `text:*`) w miejscu, zachowując znaczniki i deklaracje;
-  EPUB używa potoku `_translate_text` na każdym pliku XHTML
+## Tłumaczenie i preprocessing
 
-## Struktura kodu
+`core.py` obsługuje chunking, prompt, skille, glosariusz, `max_tokens`, ochronę i przywracanie elementów technicznych oraz wykrywanie tekstu już będącego w języku docelowym.
 
-```
-tlumacz/
-├── core.py                # Silnik tłumaczenia (bez zależności Qt)
-├── glossary.py            # CSV glosariusz (bez zależności Qt)
-├── preprocess.py          # Ochrona kodu/URL, filtry linii, chunkowanie sekcjami
-├── extract.py             # Ekstrakcja tekstu z PDF/DOCX/ODT/EPUB (bez Qt)
-├── server.py              # Zarządzany proces llama-server (bez zależności Qt)
-├── skill.py               # Skille formatów (bez zależności Qt)
-├── skills/                # Wbudowane skille: markdown, plaintext, html,
-│                          #   pdf, docx, odt, epub, SKILL_TEMPLATE.md
-└── qt_gui/
-    ├── app.py             # Punkt wejścia (main()), start/stop serwera, profile modeli
-    ├── config.py          # Trwałe ustawienia + walidacja (config.json)
-    ├── main_window.py     # Główne okno Qt Widgets (zakładki)
-    ├── worker.py          # Worker QThread do tłumaczenia w tle
-    ├── theme.py           # Motywy QSS (system / light / dark)
-    └── resources/         # Motyw QSS + ikona SVG
-```
+`preprocess.py` chroni kod, URL-e i tagi XML/HTML placeholderami, filtruje linie i dzieli dokumenty sekcjami. Dla XML stosowane jest dzielenie po znakach bez rozcinania placeholderów.
+
+Wbudowane skille obejmują Markdown, plaintext, HTML, PDF, DOCX, ODT i EPUB. Skille mogą pochodzić także z `~/.config/tlumacz/skills/`.
+
+### Wydajność
+
+Zaimplementowano usprawnienia wydajności:
+- **Cache tłumaczeń** (SQLite) — unika powtarzania tych samych zapytań, z automatycznym czyszczeniem po tłumaczeniu
+- **Równoległe tłumaczenie chunków** (ThreadPoolExecutor) — równoległe wysyłanie zapytań do serwera
+- **Skalowanie `max_tokens`** — proporcjonalne do `chunk_size` zamiast stałego limitu
+- **Statystyki cache** — wyświetlane w logach (hits/misses, effectiveness)
+
+---
+
+## Round-trip dokumentów
+
+DOCX/ODT/EPUB są przetwarzane z zachowaniem oryginalnego formatu. Tłumaczony jest tekst w odpowiednich węzłach, a struktura, style, tabele i pliki nietreściowe są zachowywane.
+
+PDF obecnie nie ma pełnego round-trip; OCR dla skanów i powrót do PDF pozostają na liście zadań.
+
+---
+
+## Pakowanie i snapshot
+
+- **0.19.1** została skompilowana jako `tlumacz-0.19.1-1-any.pkg.tar.zst`.
+- Paczka znajduje się w `/home/frs/RepoArch/x86_64` i została dodana do lokalnego `moje-repo.db`.
+- **0.19.1 nie jest przeznaczona do publicznego AUR** — to wczesna wersja testowa.
+- Utworzony został snapshot/tag `snapshot-20260823-pre-aur` przed dalszymi eksperymentami.
+- Publiczny AUR pozostaje bez tej wersji.
+
+---
 
 ## Testy
 
-- `python3 -m pytest tests/` — **86 testów** (glosariusz, config z backupem
-  i profilami modeli, skille z `skip_patterns` i szablonem, preprocessing
-  w tym `split_xml_segments` i ochrona tagów/URL, ekstrakcja ODT/EPUB/DOCX
-  (pandoc) + ścieżki błędów, serwer (kolejność szablonów), silnik tłumaczenia
-  z formatami binarnymi — w tym round-trip DOCX/ODT/EPUB, GUI smoke offscreen)
+Test suite obejmuje obecnie 102 testy: config, profile modeli, skille, preprocessing, ekstrakcję i round-trip DOCX/ODT/EPUB, serwer, cache oraz GUI smoke tests.
 
-## Pakowanie / dystrybucja
+Przed kolejnym wydaniem wymagane są ponowne testy tłumaczenia, szczególnie na dokumentach wielojęzycznych oraz wszystkich formatach round-trip.
 
-- **Wheel PyPI:** `python -m build --wheel` → `dist/tlumacz-<wersja>-py3-none-any.whl`
-- **AUR:** gotowy `PKGBUILD` (nazwa `tlumacz`, arch `any`, zależności:
-  python, pyside6, python-openai, hicolor-icon-theme) — URL do weryfikacji
-- **moje-repo:** paczka w `/home/frs/RepoArch/x86_64` (repo `moje-repo`,
-  `SigLevel = Optional TrustAll`) — do odświeżenia przy wydaniu
+---
 
-## Konfiguracja (config.json)
+## Najbliższy plan
 
-```json
-{
-  "base_url": "http://127.0.0.1:18080/v1",
-  "model": "local",
-  "chunk_size": 4000,
-  "temperature": 0.1,
-  "target_language": "Polish",
-  "theme": "system",
-  "glossary_path": "/home/frs/Projekty/agent-translator/glossary_full.csv",
-  "enabled_skills": ["Markdown", "MkDocs translations"],
-  "skip_line_patterns": ["^\\s*---\\s*$", "^\\s*(name|license|author|metadata|version|tags|created|updated)\\s*:"],
-  "server_port": 17980,
-  "server_gguf_path": "/home/frs/Modele/translategemma-4b-it.Q4_K_M.gguf",
-  "server_chat_template": "chatml",
-  "auto_start_server": true,
-  "model_profiles": {
-    "/home/frs/Modele/translategemma-4b-it.Q4_K_M.gguf": {"chat_template": "chatml"}
-  }
-}
-```
+1. ~~Dodać **Restart serwera** w Ustawieniach~~ — zaimplementowano.
+2. ~~Nie zmieniać działającego stopera~~ — jest już gotowy.
+3. ~~Dodać **czyszczenie cache po tłumaczeniu**~~ — zaimplementowano.
+4. Testować nowe modele 2B na ODT i EPUB.
+5. Wzmocnić prompty dla formatów, szczególnie dokumentów wielojęzycznych.
+6. Wybrać model zapewniający rozsądny kompromis jakość/szybkość.
+7. Dopiero po stabilizacji rozważać kolejne wydanie i publiczne AUR.
 
-Uwaga: lokalny serwer (llama.cpp) **ignoruje** nazwę modelu — zawsze używa
-`local`. Modele „myślące” (gemma-4-E4B) wymagają `--jinja` +
-`enable_thinking: false`; modele tłumaczeniowe z własnym szablonem jinja
-(translategemma-4b) uruchamiane są z `--no-jinja --chat-template chatml`
-automatycznie (autofallback + `model_profiles`).
-
-## Historia wersji (git)
-
-| Wersja | Opis |
-|--------|------|
-| v0.1–0.4 | CLI (TypeScript/Ink) — czat, LLM, narzędzia |
-| v0.5.0 | Qt GUI (PySide6), tłumaczenie w tle, ustawienia trwałe |
-| v0.5.1 | Zarządzany serwer lokalny, ścieżki wyjściowe z sufiksem języka |
-| v0.6.0 | Motywy system / light / dark |
-| v0.7.0 | Glosariusz CSV (plik + wpisy z GUI) |
-| v0.8.0 | Wykrywanie języka wejściowego (przez prompt) |
-| v0.9.0 | Walidacja config.json |
-| v0.10.0 | Pola serwera w GUI + własny prompt |
-| v0.11.0 | Skille formatów (wstrzykiwanie do promptu) + testy (33) |
-| v0.12.0 | Zakładki + pomoc PL/EN w GUI |
-| v0.13.0 | Skille użytkownika z `~/.config/tlumacz/skills/` |
-| v0.14.0 | Odśwież / import skilla, ukryte pliki w dialogach |
-| v0.15.0 | Wsparcie gemma-4-E4B: alias `local`, `--jinja`, `enable_thinking: false`, max_tokens 6000; fix nadpisywania config.json |
-| v0.16.0 | `preprocess.py` (ochrona kodu/URL, filtry linii regex, chunkowanie sekcjami), `server_chat_template` (chatml), czyszczenie EOS; testy 49 |
-| v0.17.0 | Odporność na modele (autofallback + `model_profiles`), `skip_patterns` w skillach, `SKILL_TEMPLATE.md` + „Nowy skilla", ekstrakcja PDF/DOCX/ODT/EPUB + 4 skille, „Przywróć domyślne" + backup, tooltipy i tabela parametrów w Pomocy; testy 79 |
-| v0.17.1 | Fix: tłumaczenie dokumentów dwujęzycznych (prompt jawnie nakazuje tłumaczyć wszystkie obcojęzyczne fragmenty); skalowanie okna do ekranu + scrollowane ustawienia; testy 80 |
-| v0.17.2 | Fix: ekstrakcja DOCX bez python-docx (fallback pandoc, ostatecznie LibreOffice) — działa w venv bez instalowania pakietów; testy 81 |
-| v0.18.0 | EPUB tłumaczy całą treść (pusty `skip_patterns` w skilla), czyszczenie `<|im_start|>`; wierny EPUB (mimetype STORED) |
-| v0.18.1 | Fix: EPUB z zachowaniem struktury archiwum (mimetype STORED, bez artefaktów) |
-| v0.18.2 | DOCX wyłącznie przez pandoc; usunięty `python-docx` i fallback LibreOffice |
-| v0.19.0 | **Round-trip DOCX/ODT 1:1** — `extract_office_structure`/`reconstruct_zip`/`_translate_document_xml` (tłumaczy tylko węzły `w:t`/`text:*`), `split_xml_segments`, ochrona tagów XML przed URL; EPUB też w oryginalnym formacie; testy 86 |
-
-## Plan (do_zrobienia.md)
-
-Zob. [do_zrobienia.md](do_zrobienia.md) — najważniejsze pozycje:
-- Pełna edycja config.json przez GUI (przycisk Zapisz + autozapis)
-- Lista modeli z serwera (`GET /v1/models`) zamiast pola tekstowego
-- **Lokalizacja aplikacji (i18n): PL + EN, łatwe dodawanie kolejnych języków**
-- Detekcja przez próbę dla modeli (mikro-zapytanie: EOS / tryb „myślenia")
-- **OCR dla skanów PDF i obrazów (Tesseract)** + obsługa png/jpg/webp/bmp → md
-- PDF round-trip (przetłumaczone `.md` → `.pdf`)
-- Paczki DEB / RPM / AppImage
-- Skrypt automatycznej synchronizacji moje-repo
-- Ikona repo / og-image
-
-## Uwagi środowiskowe
-
-- Konto GitHub: `frs777` (classic PAT w keyring ze scope `repo`)
-- Praca lokalna: serwer `llama-server` na 8080 uruchamiany ręcznie,
-  port 17980 zarządzany przez aplikację
-- Testy nowych modeli na mniejszym pliku (~½ rozmiaru docelowego) — nowy
-  pipeline (preprocessing + sekcje) skraca liczbę chunków i czas (~20% szybciej
-  na translategemma-4b niż gemma-4-E4B, brak GPU w maszynie)
+Pełna lista: [do_zrobienia.md](do_zrobienia.md).

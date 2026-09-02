@@ -24,9 +24,9 @@ from ..preprocess import DEFAULT_SKIP_PATTERNS
 
 APP_NAME = "tlumacz"
 
-_INT_FIELDS = {"chunk_size", "server_port"}
+_INT_FIELDS = {"chunk_size", "server_port", "server_parallel"}
 _FLOAT_FIELDS = {"temperature"}
-_BOOL_FIELDS = {"auto_start_server"}
+_BOOL_FIELDS = {"auto_start_server", "cache_clear_after_translation"}
 _LIST_FIELDS = {"enabled_skills", "skip_line_patterns"}
 _DICT_FIELDS = {"model_profiles"}
 
@@ -58,7 +58,10 @@ class AppSettings:
     server_port: int = 18080
     server_gguf_path: str = ""
     server_chat_template: str = ""
+    server_parallel: int = 1
+    server_compute_mode: str = "gpu"
     auto_start_server: bool = False
+    cache_clear_after_translation: bool = True
     model_profiles: dict[str, dict] = field(default_factory=dict)
     last_input: str = ""
     last_output: str = ""
