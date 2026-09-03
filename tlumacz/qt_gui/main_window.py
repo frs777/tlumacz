@@ -502,7 +502,7 @@ np. <code>http://127.0.0.1:8080/v1</code> dla lokalnego llama.cpp/ollama.</li>
 (domyślny placeholder <code>ollama</code>); przy zdalnych usługach wpisz
 tu swój klucz.</li>
 <li><b>Model</b> — nazwa modelu dostępna na serwerze.</li>
-<li><b>Rozmiar chunka</b> — wielkość fragmentu tekstu wysyłanego do modelu.</li>
+<li><b>Rozmiar bloku</b> — wielkość fragmentu tekstu wysyłanego do modelu.</li>
 <li><b>Temperatura</b> — stopień losowości odpowiedzi (niżej = bardziej
 deterministycznie).</li>
 <li><b>Język docelowy</b> — język, na który ma być tłumaczony tekst.</li>
@@ -565,7 +565,7 @@ domyślnych (zachowując ścieżki plików i glosariusza).</p>
 <tr><td>Model</td><td>Nazwa modelu na serwerze.</td>
 <td>np. <code>local</code> przy własnym serwerze</td>
 <td>Musi być dostępny na wskazanym serwerze.</td></tr>
-<tr><td>Rozmiar chunka</td><td>Wielkość fragmentu tekstu w jednym wywołaniu (znaki).</td>
+<tr><td>Rozmiar bloku</td><td>Wielkość fragmentu tekstu w jednym wywołaniu (znaki).</td>
 <td><b>4000–6000</b></td>
 <td>Mniejszy = lepszy kontekst sekcji, ale więcej wywołań;
 większy = mniej wywołań, ale ryzyko obcięcia i utraty spójności.</td></tr>
@@ -598,7 +598,7 @@ większy = mniej wywołań, ale ryzyko obcięcia i utraty spójności.</td></tr>
 <td>chatml rozwiązuje modele z uszkodzonym szablonem jinja.</td></tr>
 <tr><td>Równoległość (parallel)</td><td>Liczba równoległych slotów llama-server.</td>
 <td><b>1–8</b></td>
-<td>Większa wartość pozwala obsługiwać kilka chunków jednocześnie, ale zwiększa zużycie zasobów.</td></tr>
+<td>Większa wartość pozwala obsługiwać kilka bloków jednocześnie, ale zwiększa zużycie zasobów.</td></tr>
 <tr><td>Motyw</td><td>Wygląd okna.</td>
 <td>system / jasny / ciemny</td>
 <td>Kwestia preferencji; „system" podąża za pulpitem.</td></tr>
@@ -825,7 +825,7 @@ OCR is not supported (text PDFs only).</p>
         form.addRow("Base URL:", self.base_url)
         form.addRow("API key:", self.api_key)
         form.addRow("Model:", self.model)
-        form.addRow("Rozmiar chunka:", self.chunk_size)
+        form.addRow("Rozmiar bloku:", self.chunk_size)
         form.addRow("Temperatura:", self.temperature)
         form.addRow("Język docelowy:", self.language)
         form.addRow("Motyw:", self.theme)

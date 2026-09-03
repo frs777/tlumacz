@@ -414,17 +414,17 @@ class Translator:
         total = sum(1 for kind, _ in segments if kind == "translate")
 
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            log(f"Using glossary: {self.config.glossary_path}")
+            log(f"Używanie glosariusza: {self.config.glossary_path}")
 
         if skill_name:
-            log(f"Using skill: {skill_name}")
+            log(f"Używanie skilla: {skill_name}")
 
         # Build system prompt once for all chunks
         system_prompt = self._build_system_prompt(skill_text)
 
         if protected:
-            log(f"Protected {len(protected)} code/URL fragment(s)")
-        log(f"Processing {total} chunk(s)...")
+            log(f"Chroniono {len(protected)} fragment(ów) kodu/URL")
+        log(f"Przetwarzanie {total} blok(ów)...")
 
         with open(output_path, "w", encoding="utf-8") as out:
             written = 0
@@ -449,7 +449,7 @@ class Translator:
                 executor.shutdown(wait=True)
             for index, (kind, content) in enumerate(segments):
                 if is_cancelled is not None and is_cancelled():
-                    log("Translation cancelled by user.")
+                    log("Tłumaczenie anulowane przez użytkownika.")
                     raise TranslationCancelledError("Translation was cancelled.")
 
                 if kind == "keep":
@@ -458,7 +458,7 @@ class Translator:
                     continue
 
                 written += 1
-                log(f"Translating chunk {written}/{total}...")
+                log(f"Tłumaczenie bloku {written}/{total}...")
 
                 translated = translated_map[index] if translated_map else self._translate_chunk(content, system_prompt)
                 out.write(restore(translated, protected))
@@ -467,7 +467,7 @@ class Translator:
                 if progress_callback is not None:
                     progress_callback(written, total)
 
-        log(f"Translation saved to: {output_path}")
+        log(f"Zapisano tłumaczenie do: {output_path}")
 
         # Log cache statistics
         cache_stats = self._cache.stats()
@@ -477,14 +477,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+                log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                log("Cache: no lookups")
+                log("Cache: brak zapytań")
         
         # Clear cache after translation if configured (for accurate benchmarking)
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            log("Cache cleared after translation")
+            log("Cache wyczyszczony po tłumaczeniu")
         
         self._cache.reset_stats()
 
@@ -523,9 +523,9 @@ class Translator:
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            _log(f"Using glossary: {self.config.glossary_path}")
+            _log(f"Używanie glosariusza: {self.config.glossary_path}")
         if skill_name:
-            _log(f"Using skill: {skill_name}")
+            _log(f"Używanie skilla: {skill_name}")
 
         # Build system prompt once for all XHTML files
         system_prompt = self._build_system_prompt(skill_text)
@@ -556,9 +556,9 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+                _log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                _log("Cache: no lookups")
+                _log("Cache: brak zapytań")
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
@@ -611,9 +611,9 @@ class Translator:
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            _log(f"Using glossary: {self.config.glossary_path}")
+            _log(f"Używanie glosariusza: {self.config.glossary_path}")
         if skill_name:
-            _log(f"Using skill: {skill_name}")
+            _log(f"Używanie skilla: {skill_name}")
 
         # Build system prompt once for all XML files
         system_prompt = self._build_system_prompt(skill_text)
@@ -644,9 +644,9 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+                _log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                _log("Cache: no lookups")
+                _log("Cache: brak zapytań")
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
@@ -692,9 +692,9 @@ class Translator:
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            _log(f"Using glossary: {self.config.glossary_path}")
+            _log(f"Używanie glosariusza: {self.config.glossary_path}")
         if skill_name:
-            _log(f"Using skill: {skill_name}")
+            _log(f"Używanie skilla: {skill_name}")
 
         system_prompt = self._build_system_prompt(skill_text)
 
@@ -791,9 +791,9 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+                _log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                _log("Cache: no lookups")
+                _log("Cache: brak zapytań")
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
@@ -1102,8 +1102,8 @@ class Translator:
         system_prompt = self._build_system_prompt(skill_text)
 
         if protected:
-            log(f"Protected {len(protected)} code/URL fragment(s)")
-        log(f"Processing {total} chunk(s)...")
+            log(f"Chroniono {len(protected)} fragment(ów) kodu/URL")
+        log(f"Przetwarzanie {total} blok(ów)...")
 
         parts: list[str] = []
         written = 0
@@ -1117,7 +1117,7 @@ class Translator:
                 continue
 
             written += 1
-            log(f"Translating chunk {written}/{total}...")
+            log(f"Tłumaczenie bloku {written}/{total}...")
             translated = self._translate_chunk(content, system_prompt)
             parts.append(restore(translated, protected) + "\n\n")
 
