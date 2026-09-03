@@ -1058,7 +1058,7 @@ OCR is not supported (text PDFs only).</p>
             self.restart_server_btn.setToolTip(
                 "Serwer nie wystartował przy starcie programu. Sprawdź logi i uruchom program ponownie."
             )
-        form.addRow(self.restart_server_btn)
+        self.server_form.addRow(self.restart_server_btn)
         return self.server_group
 
     # ------------------------------------------------------------- helpers --
