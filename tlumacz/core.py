@@ -38,6 +38,7 @@ from .preprocess import (
     split_xml_segments,
 )
 from .skill import text_for_file
+from .i18n import t
 
 MAX_NODES_PER_SEGMENT = 25
 
@@ -298,20 +299,20 @@ class Translator:
         if self._cancel_event.is_set():
             if own_client:
                 client.close()
-            raise TranslationCancelledError("Translation was cancelled.")
+            raise TranslationCancelledError(t("log.translation_cancelled"))
         with self._client_lock:
             self._active_clients.add(client)
         request_start = time.monotonic()
         try:
             response = client.chat.completions.create(**request_kwargs)
             if self._cancel_event.is_set():
-                raise TranslationCancelledError("Translation was cancelled.")
+                raise TranslationCancelledError(t("log.translation_cancelled"))
             content = response.choices[0].message.content or ""
         except TranslationCancelledError:
             raise
         except Exception:
             if self._cancel_event.is_set():
-                raise TranslationCancelledError("Translation was cancelled.")
+                raise TranslationCancelledError(t("log.translation_cancelled"))
             raise
         finally:
             _log_chunk_timing(chunk, max_tokens, time.monotonic() - request_start)
@@ -367,7 +368,7 @@ class Translator:
 
         if is_binary_format(input_path):
             ext = Path(input_path).suffix.lower().lstrip(".")
-            log(f"Wyodrębnianie tekstu z pliku .{ext}...")
+            log(t("log.extracting_text", ext=ext))
             
             # Specjalna ścieżka dla EPUB - bezpośrednio na XHTML, bez Markdowna
             if ext == "epub":
@@ -414,17 +415,17 @@ class Translator:
         total = sum(1 for kind, _ in segments if kind == "translate")
 
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            log(f"Używanie glosariusza: {self.config.glossary_path}")
+            log(t("log.using_glossary", path=self.config.glossary_path))
 
         if skill_name:
-            log(f"Używanie skilla: {skill_name}")
+            log(t("log.using_skill", name=skill_name))
 
         # Build system prompt once for all chunks
         system_prompt = self._build_system_prompt(skill_text)
 
         if protected:
-            log(f"Chroniono {len(protected)} fragment(ów) kodu/URL")
-        log(f"Przetwarzanie {total} blok(ów)...")
+            log(t("log.protected_fragments", count=len(protected)))
+        log(t("log.processing_blocks", count=total))
 
         with open(output_path, "w", encoding="utf-8") as out:
             written = 0
@@ -437,7 +438,7 @@ class Translator:
                     done_count = 0
                     for future in as_completed(futures):
                         if is_cancelled is not None and is_cancelled():
-                            raise TranslationCancelledError("Translation was cancelled.")
+                            raise TranslationCancelledError(t("log.translation_cancelled"))
                         translated_map[futures[future]] = future.result()
                         done_count += 1
                         if progress_callback is not None:
@@ -449,8 +450,8 @@ class Translator:
                 executor.shutdown(wait=True)
             for index, (kind, content) in enumerate(segments):
                 if is_cancelled is not None and is_cancelled():
-                    log("Tłumaczenie anulowane przez użytkownika.")
-                    raise TranslationCancelledError("Translation was cancelled.")
+                    log(t("log.translation_cancelled"))
+                    raise TranslationCancelledError(t("log.translation_cancelled"))
 
                 if kind == "keep":
                     out.write(content)
@@ -458,7 +459,7 @@ class Translator:
                     continue
 
                 written += 1
-                log(f"Tłumaczenie bloku {written}/{total}...")
+                log(t("log.translating_block", current=written, total=total))
 
                 translated = translated_map[index] if translated_map else self._translate_chunk(content, system_prompt)
                 out.write(restore(translated, protected))
@@ -467,7 +468,7 @@ class Translator:
                 if progress_callback is not None:
                     progress_callback(written, total)
 
-        log(f"Zapisano tłumaczenie do: {output_path}")
+        log(t("log.translation_saved", path=output_path))
 
         # Log cache statistics
         cache_stats = self._cache.stats()
@@ -477,14 +478,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                log(t("log.buffer_stats", hits=hits, misses=misses, effectiveness=f"{effectiveness:.0f}"))
             else:
-                log("Bufor: brak zapytań")
+                log(t("log.buffer_no_lookups"))
         
         # Clear cache after translation if configured (for accurate benchmarking)
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            log("Bufor wyczyszczony po tłumaczeniu")
+            log(t("log.buffer_cleared"))
         
         self._cache.reset_stats()
 
@@ -509,7 +510,7 @@ class Translator:
             if log:
                 log(msg)
 
-        _log("Wyodrębnianie struktury z EPUB...")
+        _log(t("log.extracting_epub"))
         try:
             structure = extract_epub_structure(input_path)
         except ExtractionError as exc:
@@ -517,15 +518,15 @@ class Translator:
 
         files = structure["files"]
         xhtml_paths = structure["xhtml_paths"]
-        _log(f"Znaleziono {len(xhtml_paths)} plik(ów) treści do przetłumaczenia.")
+        _log(t("log.found_xhtml_files", count=len(xhtml_paths)))
 
         skill_text, skill_name, _ = text_for_file(
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            _log(f"Używanie glosariusza: {self.config.glossary_path}")
+            _log(t("log.using_glossary", path=self.config.glossary_path))
         if skill_name:
-            _log(f"Używanie skilla: {skill_name}")
+            _log(t("log.using_skill", name=skill_name))
 
         # Build system prompt once for all XHTML files
         system_prompt = self._build_system_prompt(skill_text)
@@ -533,7 +534,7 @@ class Translator:
         updates: dict[str, bytes] = {}
         for idx, rel in enumerate(xhtml_paths, start=1):
             raw = files[rel].decode("utf-8", errors="replace")
-            _log(f"Tłumaczenie pliku {idx}/{len(xhtml_paths)}: {rel}")
+            _log(t("log.translating_file", current=idx, total=len(xhtml_paths), name=rel))
             translated_html = self._translate_xhtml_inplace(
                 raw, system_prompt,
                 log=_log, progress_callback=progress_callback,
@@ -541,12 +542,12 @@ class Translator:
             )
             updates[rel] = translated_html.encode("utf-8")
 
-        _log("Budowanie przetłumaczonego EPUB...")
+        _log(t("log.building_epub"))
         try:
             reconstruct_epub(files, updates, output_path)
         except Exception as exc:  # noqa: BLE001
             raise ExtractionError(f"Błąd przy budowaniu EPUB: {exc}") from exc
-        _log(f"Zapisano przetłumaczony EPUB: {output_path}")
+        _log(t("log.epub_saved", path=output_path))
 
         # Log cache statistics
         cache_stats = self._cache.stats()
@@ -556,14 +557,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                _log(t("log.buffer_stats", hits=hits, misses=misses, effectiveness=f"{effectiveness:.0f}"))
             else:
-                _log("Bufor: brak zapytań")
+                _log(t("log.buffer_no_lookups"))
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            _log("Bufor wyczyszczony")
+            _log(t("log.buffer_cleared_short"))
 
         return output_path
 
@@ -593,7 +594,7 @@ class Translator:
             if log:
                 log(msg)
 
-        _log(f"Rozpakowywanie pliku .{ext}...")
+        _log(t("log.unpacking_archive", ext=ext))
         try:
             structure = extract_office_structure(input_path, ext)
         except ExtractionError as exc:
@@ -603,17 +604,15 @@ class Translator:
 
         files = structure["files"]
         content_paths = structure["content_paths"]
-        _log(
-            f"Znaleziono {len(content_paths)} plik(ów) treści do przetłumaczenia."
-        )
+        _log(t("log.found_content_files", count=len(content_paths)))
 
         skill_text, skill_name, _ = text_for_file(
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            _log(f"Używanie glosariusza: {self.config.glossary_path}")
+            _log(t("log.using_glossary", path=self.config.glossary_path))
         if skill_name:
-            _log(f"Używanie skilla: {skill_name}")
+            _log(t("log.using_skill", name=skill_name))
 
         # Build system prompt once for all XML files
         system_prompt = self._build_system_prompt(skill_text)
@@ -621,7 +620,7 @@ class Translator:
         updates: dict[str, bytes] = {}
         for idx, rel in enumerate(content_paths, start=1):
             raw = files[rel].decode("utf-8", errors="replace")
-            _log(f"Tłumaczenie pliku {idx}/{len(content_paths)}: {rel}")
+            _log(t("log.translating_file", current=idx, total=len(content_paths), name=rel))
             translated = self._translate_document_xml(
                 raw, ext, system_prompt,
                 log=_log, progress_callback=progress_callback,
@@ -629,12 +628,12 @@ class Translator:
             )
             updates[rel] = translated.encode("utf-8")
 
-        _log(f"Budowanie przetłumaczonego pliku {label}...")
+        _log(t("log.building_archive", format=label))
         try:
             reconstruct_zip(files, updates, output_path)
         except Exception as exc:  # noqa: BLE001
             raise ExtractionError(f"Błąd przy budowaniu {label}: {exc}") from exc
-        _log(f"Zapisano przetłumaczony {label}: {output_path}")
+        _log(t("log.archive_saved", format=label, path=output_path))
 
         # Log cache statistics
         cache_stats = self._cache.stats()
@@ -644,14 +643,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                _log(t("log.buffer_stats", hits=hits, misses=misses, effectiveness=f"{effectiveness:.0f}"))
             else:
-                _log("Bufor: brak zapytań")
+                _log(t("log.buffer_no_lookups"))
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            _log("Bufor wyczyszczony")
+            _log(t("log.buffer_cleared_short"))
 
         return output_path
 
@@ -677,7 +676,7 @@ class Translator:
             if log:
                 log(msg)
 
-        _log("Ekstrakcja tekstu z PDF...")
+        _log(t("log.extracting_pdf"))
         try:
             blocks = extract_text_blocks(input_path)
         except Exception as exc:
@@ -686,15 +685,15 @@ class Translator:
         if not blocks:
             raise ExtractionError("Plik PDF nie zawiera tekstu do przetłumaczenia.")
 
-        _log(f"Znaleziono {len(blocks)} blok(ów) tekstu.")
+        _log(t("log.found_text_blocks", count=len(blocks)))
 
         skill_text, skill_name, _ = text_for_file(
             input_path, self.config.enabled_skills
         )
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            _log(f"Używanie glosariusza: {self.config.glossary_path}")
+            _log(t("log.using_glossary", path=self.config.glossary_path))
         if skill_name:
-            _log(f"Używanie skilla: {skill_name}")
+            _log(t("log.using_skill", name=skill_name))
 
         system_prompt = self._build_system_prompt(skill_text)
 
@@ -705,11 +704,11 @@ class Translator:
         total_blocks = len(blocks)
         for idx, block in enumerate(blocks):
             if is_cancelled is not None and is_cancelled():
-                _log("Tłumaczenie anulowane przez użytkownika.")
+                _log(t("log.translation_cancelled"))
                 doc.close()
-                raise TranslationCancelledError("Translation was cancelled.")
+                raise TranslationCancelledError(t("log.translation_cancelled"))
 
-            _log(f"Tłumaczenie bloku {idx + 1}/{total_blocks}...")
+            _log(t("log.translating_block", current=idx + 1, total=total_blocks))
 
             # Tłumacz tekst bloku
             original_text = block.text
@@ -749,7 +748,7 @@ class Translator:
             if rc < 0:
                 scale_factor = 0.9
                 new_font_size = font_size * scale_factor
-                _log(f"Tekst nie mieści się, zmniejszam czcionkę z {font_size:.1f} na {new_font_size:.1f}")
+                _log(t("log.text_not_fitting", from_size=font_size, to_size=new_font_size))
 
                 rc = page.insert_textbox(
                     rect,
@@ -761,7 +760,7 @@ class Translator:
 
                 if rc < 0:
                     new_font_size = font_size * 0.7
-                    _log(f"Nadal nie mieści się, zmniejszam do {new_font_size:.1f}")
+                    _log(t("log.still_not_fitting", size=new_font_size))
                     rc = page.insert_textbox(
                         rect,
                         translated_text,
@@ -771,17 +770,17 @@ class Translator:
                     )
 
             if rc < 0:
-                _log(f"Uwaga: tekst nie mieści się w bloku {idx + 1}, może być ucięty.")
+                _log(t("log.text_may_be_truncated", block_num=idx + 1))
 
             if progress_callback is not None:
                 progress_callback(idx + 1, total_blocks)
 
         # Zapisz przetłumaczony PDF
-        _log(f"Zapisywanie przetłumaczonego PDF...")
+        _log(t("log.saving_pdf"))
         doc.save(output_path)
         doc.close()
 
-        _log(f"Zapisano przetłumaczony PDF: {output_path}")
+        _log(t("log.pdf_saved", path=output_path))
 
         # Log cache statistics
         cache_stats = self._cache.stats()
@@ -791,14 +790,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                _log(t("log.buffer_stats", hits=hits, misses=misses, effectiveness=f"{effectiveness:.0f}"))
             else:
-                _log("Bufor: brak zapytań")
+                _log(t("log.buffer_no_lookups"))
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            _log("Bufor wyczyszczony")
+            _log(t("log.buffer_cleared_short"))
 
         return output_path
 
@@ -882,23 +881,23 @@ class Translator:
         current_len = 0
         for idx in range(len(slots)):
             elem, kind = slots[idx]
-            t = elem.text if kind == "text" else elem.tail or ""
+            txt = elem.text if kind == "text" else elem.tail or ""
             too_many = len(current) >= MAX_NODES_PER_SEGMENT
             if current and (
-                too_many or current_len + len(t) + 8 > self.config.chunk_size
+                too_many or current_len + len(txt) + 8 > self.config.chunk_size
             ):
                 segments.append(current)
                 current, current_len = [], 0
             current.append(idx)
-            current_len += len(t) + 8
+            current_len += len(txt) + 8
 
         if current:
             segments.append(current)
 
         for seg_idx, seg in enumerate(segments):
             if is_cancelled is not None and is_cancelled():
-                log("Translation cancelled by user.")
-                raise TranslationCancelledError("Translation was cancelled.")
+                log(t("log.translation_cancelled"))
+                raise TranslationCancelledError(t("log.translation_cancelled"))
             texts = [
                 slots[i][0].text if slots[i][1] == "text" else slots[i][0].tail or ""
                 for i in seg
@@ -906,7 +905,7 @@ class Translator:
             joined = texts[0]
             for j, text in enumerate(texts[1:], 1):
                 joined += f"\n⟦S_{j-1}⟧\n" + text
-            log(f"Tłumaczenie segmentu {seg_idx + 1}/{len(segments)}...")
+            log(t("log.translating_segment", current=seg_idx + 1, total=len(segments)))
             translated = self._translate_chunk(joined, system_prompt)
             parts = re.split(r"⟦S_\d+⟧", translated)
             if len(parts) == len(seg):
@@ -921,7 +920,7 @@ class Translator:
                 for i in seg:
                     if is_cancelled is not None and is_cancelled():
                         raise TranslationCancelledError(
-                            "Translation was cancelled."
+                            t("log.translation_cancelled")
                         )
                     elem, kind = slots[i]
                     text = elem.text if kind == "text" else elem.tail or ""
@@ -1008,23 +1007,23 @@ class Translator:
         current_len = 0
         for idx in range(len(slots)):
             elem, kind = slots[idx]
-            t = elem.text if kind == "text" else elem.tail or ""
+            txt = elem.text if kind == "text" else elem.tail or ""
             too_many = len(current) >= MAX_NODES_PER_SEGMENT
             if current and (
-                too_many or current_len + len(t) + 8 > self.config.chunk_size
+                too_many or current_len + len(txt) + 8 > self.config.chunk_size
             ):
                 segments.append(current)
                 current, current_len = [], 0
             current.append(idx)
-            current_len += len(t) + 8
+            current_len += len(txt) + 8
 
         if current:
             segments.append(current)
 
         for seg_idx, seg in enumerate(segments):
             if is_cancelled is not None and is_cancelled():
-                log("Translation cancelled by user.")
-                raise TranslationCancelledError("Translation was cancelled.")
+                log(t("log.translation_cancelled"))
+                raise TranslationCancelledError(t("log.translation_cancelled"))
             texts = [
                 slots[i][0].text if slots[i][1] == "text" else slots[i][0].tail or ""
                 for i in seg
@@ -1032,7 +1031,7 @@ class Translator:
             joined = texts[0]
             for j, text in enumerate(texts[1:], 1):
                 joined += f"\n⟦S_{j-1}⟧\n" + text
-            log(f"Tłumaczenie segmentu {seg_idx + 1}/{len(segments)}...")
+            log(t("log.translating_segment", current=seg_idx + 1, total=len(segments)))
             translated = self._translate_chunk(joined, system_prompt)
             parts = re.split(r"⟦S_\d+⟧", translated)
             if len(parts) == len(seg):
@@ -1045,7 +1044,7 @@ class Translator:
             else:
                 for i in seg:
                     if is_cancelled is not None and is_cancelled():
-                        raise TranslationCancelledError("Translation was cancelled.")
+                        raise TranslationCancelledError(t("log.translation_cancelled"))
                     elem, kind = slots[i]
                     text = elem.text if kind == "text" else elem.tail or ""
                     translated_node = self._translate_chunk(text, system_prompt)
@@ -1086,7 +1085,7 @@ class Translator:
         """
         masked, protected = protect(text)
         if not re.sub(r"⟦PROT_\d+⟧|\s", "", masked):
-            log("Brak tekstu do przetłumaczenia - kopiuję plik bez zmian.")
+            log(t("log.no_text_to_translate"))
             return text
         if protected:
             segments = split_xml_segments(masked, self.config.chunk_size)
@@ -1102,15 +1101,15 @@ class Translator:
         system_prompt = self._build_system_prompt(skill_text)
 
         if protected:
-            log(f"Chroniono {len(protected)} fragment(ów) kodu/URL")
-        log(f"Przetwarzanie {total} blok(ów)...")
+            log(t("log.protected_fragments", count=len(protected)))
+        log(t("log.processing_blocks", count=total))
 
         parts: list[str] = []
         written = 0
         for kind, content in segments:
             if is_cancelled is not None and is_cancelled():
-                log("Translation cancelled by user.")
-                raise TranslationCancelledError("Translation was cancelled.")
+                log(t("log.translation_cancelled"))
+                raise TranslationCancelledError(t("log.translation_cancelled"))
 
             if kind == "keep":
                 parts.append(content + "\n")
