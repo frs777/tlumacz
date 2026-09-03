@@ -4,7 +4,7 @@
 
 pkgname=tlumacz
 pkgver=0.20.1
-pkgrel=1
+pkgrel=2
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')
 url="https://github.com/frs777/tlumacz"
