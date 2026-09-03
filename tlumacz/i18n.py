@@ -50,6 +50,7 @@ PL = {
     "settings.auto_start": "Uruchamiaj serwer razem z programem",
     "settings.clear_cache": "Czyść cache po każdym tłumaczeniu",
     "settings.glossary_path": "Plik glosariusza:",
+    "glossary.no_file": "Brak pliku",
     "settings.chat_auto": "Auto (jinja)",
     "settings.chat_chatml": "chatml (modele transl. gemma)",
 
@@ -167,6 +168,7 @@ EN = {
     "settings.auto_start": "Start server with the app",
     "settings.clear_cache": "Clear cache after each translation",
     "settings.glossary_path": "Glossary file:",
+    "glossary.no_file": "No file",
     "settings.chat_auto": "Auto (jinja)",
     "settings.chat_chatml": "chatml (transl. gemma models)",
 

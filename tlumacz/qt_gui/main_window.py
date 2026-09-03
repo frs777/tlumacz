@@ -361,7 +361,7 @@ class MainWindow(QMainWindow):
         entry_row.addWidget(self.add_entry_btn)
         layout.addLayout(entry_row)
 
-        self.glossary_count_label = QLabel("Brak pliku")
+        self.glossary_count_label = QLabel(t("glossary.no_file"))
         self.glossary_count_label.setObjectName("glossaryCount")
         layout.addWidget(self.glossary_count_label)
         return self.glossary_group
@@ -579,6 +579,7 @@ class MainWindow(QMainWindow):
         # Przyciski glosariusza
         self.glossary_browse.setText(t("button.browse"))
         self.add_entry_btn.setText(t("button.add_entry"))
+        self.glossary_count_label.setText(t("glossary.no_file"))
         # Przyciski skilli
         self.refresh_skills_btn.setText(t("button.refresh"))
         self.import_skill_btn.setText(t("button.import_skill"))
