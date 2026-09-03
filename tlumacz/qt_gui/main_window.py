@@ -340,10 +340,10 @@ class MainWindow(QMainWindow):
             "Nagłówek oraz prefiks # w tłumaczeniu są obsługiwane automatycznie."
         )
         self.glossary_path.editingFinished.connect(self._on_glossary_path_edited)
-        glossary_browse = QPushButton(t("button.browse"))
-        glossary_browse.clicked.connect(self._on_browse_glossary)
+        self.glossary_browse = QPushButton(t("button.browse"))
+        self.glossary_browse.clicked.connect(self._on_browse_glossary)
         file_row.addWidget(self.glossary_path, 1)
-        file_row.addWidget(glossary_browse)
+        file_row.addWidget(self.glossary_browse)
         layout.addLayout(file_row)
 
         entry_row = QHBoxLayout()
@@ -353,12 +353,12 @@ class MainWindow(QMainWindow):
         self.glossary_target = QLineEdit()
         self.glossary_target.setObjectName("glossaryTarget")
         self.glossary_target.setPlaceholderText("Tłumaczenie")
-        add_entry = QPushButton(t("button.add_entry"))
-        add_entry.setObjectName("addGlossaryBtn")
-        add_entry.clicked.connect(self._on_add_glossary_entry)
+        self.add_entry_btn = QPushButton(t("button.add_entry"))
+        self.add_entry_btn.setObjectName("addGlossaryBtn")
+        self.add_entry_btn.clicked.connect(self._on_add_glossary_entry)
         entry_row.addWidget(self.glossary_term, 1)
         entry_row.addWidget(self.glossary_target, 1)
-        entry_row.addWidget(add_entry)
+        entry_row.addWidget(self.add_entry_btn)
         layout.addLayout(entry_row)
 
         self.glossary_count_label = QLabel("Brak pliku")
@@ -376,18 +376,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._skill_row)
 
         button_row = QHBoxLayout()
-        refresh_btn = QPushButton(t("button.refresh"))
-        refresh_btn.setObjectName("refreshSkillsBtn")
-        refresh_btn.clicked.connect(self._on_refresh_skills)
-        import_btn = QPushButton(t("button.import_skill"))
-        import_btn.setObjectName("importSkillBtn")
-        import_btn.clicked.connect(self._on_import_skill)
-        new_btn = QPushButton(t("button.new_skill"))
-        new_btn.setObjectName("newSkillBtn")
-        new_btn.clicked.connect(self._on_new_skill)
-        button_row.addWidget(refresh_btn)
-        button_row.addWidget(import_btn)
-        button_row.addWidget(new_btn)
+        self.refresh_skills_btn = QPushButton(t("button.refresh"))
+        self.refresh_skills_btn.setObjectName("refreshSkillsBtn")
+        self.refresh_skills_btn.clicked.connect(self._on_refresh_skills)
+        self.import_skill_btn = QPushButton(t("button.import_skill"))
+        self.import_skill_btn.setObjectName("importSkillBtn")
+        self.import_skill_btn.clicked.connect(self._on_import_skill)
+        self.new_skill_btn = QPushButton(t("button.new_skill"))
+        self.new_skill_btn.setObjectName("newSkillBtn")
+        self.new_skill_btn.clicked.connect(self._on_new_skill)
+        button_row.addWidget(self.refresh_skills_btn)
+        button_row.addWidget(self.import_skill_btn)
+        button_row.addWidget(self.new_skill_btn)
         button_row.addStretch(1)
         layout.addLayout(button_row)
 
@@ -558,6 +558,21 @@ class MainWindow(QMainWindow):
                 item.widget().setText(t(key))
         # Serwer
         self.restart_server_btn.setText(t("button.restart_server"))
+        self.gguf_browse.setText(t("button.browse"))
+        # Checkboxy server
+        self.auto_start_server.setText(t("settings.auto_start"))
+        self.cache_clear_after_translation.setText(t("settings.clear_cache"))
+        # ComboBox chat template - przebuduj items
+        self.server_chat_template.clear()
+        self.server_chat_template.addItem(t("settings.chat_auto"), "")
+        self.server_chat_template.addItem(t("settings.chat_chatml"), "chatml")
+        # Przyciski glosariusza
+        self.glossary_browse.setText(t("button.browse"))
+        self.add_entry_btn.setText(t("button.add_entry"))
+        # Przyciski skilli
+        self.refresh_skills_btn.setText(t("button.refresh"))
+        self.import_skill_btn.setText(t("button.import_skill"))
+        self.new_skill_btn.setText(t("button.new_skill"))
 
     def _help_text_pl(self) -> str:
         return """
@@ -950,10 +965,10 @@ OCR is not supported (text PDFs only).</p>
             "Ścieżka do pliku modelu .gguf uruchamianego samodzielnie.\n"
             "Puste = korzystasz z własnego serwera (Base URL)."
         )
-        gguf_browse = QPushButton(t("button.browse"))
-        gguf_browse.clicked.connect(self._on_browse_gguf)
+        self.gguf_browse = QPushButton(t("button.browse"))
+        self.gguf_browse.clicked.connect(self._on_browse_gguf)
         gguf_row.addWidget(self.server_gguf_path, 1)
-        gguf_row.addWidget(gguf_browse)
+        gguf_row.addWidget(self.gguf_browse)
 
         self.auto_start_server = QCheckBox(
             t("settings.auto_start")
