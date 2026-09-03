@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 from ..core import TranslatorConfig
 
 from ..glossary import Glossary
+from ..i18n import t, set_language, Language
 from ..preprocess import DEFAULT_SKIP_PATTERNS
 from ..server import SERVER_MODEL_ALIAS
 from ..skill import (
@@ -822,19 +823,19 @@ OCR is not supported (text PDFs only).</p>
             "Zwykle nie musisz nic tu wpisywać."
         )
 
-        form.addRow("Base URL:", self.base_url)
-        form.addRow("API key:", self.api_key)
-        form.addRow("Model:", self.model)
-        form.addRow("Rozmiar bloku:", self.chunk_size)
-        form.addRow("Temperatura:", self.temperature)
-        form.addRow("Język docelowy:", self.language)
-        form.addRow("Motyw:", self.theme)
-        form.addRow("Własny prompt:", self.prompt_edit)
-        form.addRow("Zaawansowane — pomijane linie (regex):", self.skip_patterns_edit)
+        form.addRow(t("settings.base_url"), self.base_url)
+        form.addRow(t("settings.api_key"), self.api_key)
+        form.addRow(t("settings.model"), self.model)
+        form.addRow(t("settings.block_size"), self.chunk_size)
+        form.addRow(t("settings.temperature"), self.temperature)
+        form.addRow(t("settings.target_language"), self.language)
+        form.addRow(t("settings.theme"), self.theme)
+        form.addRow(t("settings.custom_prompt"), self.prompt_edit)
+        form.addRow(t("settings.skip_patterns"), self.skip_patterns_edit)
         return box
 
     def _build_server_group(self) -> QGroupBox:
-        box = QGroupBox("Serwer lokalny (llama.cpp / GGUF)")
+        box = QGroupBox(t("settings.server_group"))
         form = QFormLayout(box)
 
         self.server_port = QSpinBox()
