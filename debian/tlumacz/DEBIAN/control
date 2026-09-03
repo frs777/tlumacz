@@ -1,0 +1,8 @@
+Package: tlumacz
+Version: 0.20.1-2
+Architecture: all
+Maintainer: frs <frs@users.noreply.github.com>
+Depends: python3, python3-pyside6, python3-openai, python3-pymupdf, hicolor-icon-theme
+Description: AI-powered document translator with a Qt GUI
+ Tłumacz is a Qt/PySide6 application for translating documents using
+ LLM models compatible with the OpenAI API.

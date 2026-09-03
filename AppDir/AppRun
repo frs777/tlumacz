@@ -1,0 +1,10 @@
+#!/bin/bash
+# AppRun dla Tłumacz AppImage
+# Używa systemowego Pythona i zależności (PySide6, openai, pymupdf)
+
+# Ustaw ścieżki do plików aplikacji
+HERE="$(dirname "$(readlink -f "$0")")"
+export PYTHONPATH="$HERE/usr/lib/python3/site-packages:$PYTHONPATH"
+
+# Uruchom aplikację używając systemowego Pythona
+exec python3 -m tlumacz.qt_gui.app "$@"

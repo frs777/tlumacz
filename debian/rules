@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	cd . && python3 -m build --wheel --no-isolation
+
+override_dh_auto_install:
+	cd . && python3 -m installer --destdir=debian/tlumacz dist/*.whl
+	install -Dpm0644 LICENSE.txt debian/tlumacz/usr/share/licenses/tlumacz/LICENSE.txt
+	install -Dpm0644 tlumacz.desktop debian/tlumacz/usr/share/applications/tlumacz.desktop
+	install -Dpm0644 tlumacz/qt_gui/resources/tlumacz.svg \
+		debian/tlumacz/usr/share/icons/hicolor/scalable/apps/tlumacz.svg

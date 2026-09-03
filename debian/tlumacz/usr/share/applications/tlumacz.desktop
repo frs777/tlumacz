@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Tlumacz
+Comment=AI-powered document translator
+Exec=tlumacz
+Icon=tlumacz
+Type=Application
+Categories=Office;Utility;TextTools;
+Keywords=translate;translation;ai;polish;
+Terminal=false
