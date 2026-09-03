@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
 from ..core import TranslatorConfig
 
 from ..glossary import Glossary
-from ..i18n import t, set_language, Language
+from ..i18n import t, set_language, get_language, Language
 from ..preprocess import DEFAULT_SKIP_PATTERNS
 from ..server import SERVER_MODEL_ALIAS
 from ..skill import (
@@ -131,14 +131,21 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Tłumacz")
         self.setMinimumSize(640, 480)
-        screen = QGuiApplication.primaryScreen()
-        if screen is not None:
-            area = screen.availableGeometry()
-            w = min(900, max(640, int(area.width() * 0.9)))
-            h = min(720, max(480, int(area.height() * 0.9)))
-            self.resize(w, h)
+
+        # Przywróć rozmiar i pozycję okna z QSettings
+        self._window_settings = QSettings("tlumacz", "Tłumacz")
+        geometry = self._window_settings.value("windowGeometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
         else:
-            self.resize(900, 720)
+            screen = QGuiApplication.primaryScreen()
+            if screen is not None:
+                area = screen.availableGeometry()
+                w = min(900, max(640, int(area.width() * 0.9)))
+                h = min(720, max(480, int(area.height() * 0.9)))
+                self.resize(w, h)
+            else:
+                self.resize(900, 720)
 
         self._settings, config_warning = load_settings()
         self._server = server
@@ -183,10 +190,10 @@ class MainWindow(QMainWindow):
         t_layout.addWidget(self._build_files_group())
 
         controls = QHBoxLayout()
-        self.translate_btn = QPushButton("Tłumacz")
+        self.translate_btn = QPushButton(t("button.translate"))
         self.translate_btn.setObjectName("translateBtn")
         self.translate_btn.clicked.connect(self._on_translate)
-        self.cancel_btn = QPushButton("Anuluj")
+        self.cancel_btn = QPushButton(t("button.cancel"))
         self.cancel_btn.setObjectName("cancelBtn")
         self.cancel_btn.clicked.connect(self._on_cancel)
         controls.addWidget(self.translate_btn)
@@ -235,7 +242,7 @@ class MainWindow(QMainWindow):
 
         splitter.setSizes([300, 300])
         t_layout.addWidget(splitter, 1)
-        self.tabs.addTab(translation_tab, "Tłumaczenie")
+        self.tabs.addTab(translation_tab, t("tab.translation"))
 
         # --- Tab: Ustawienia --------------------------------------------------
         settings_tab = QWidget()
@@ -248,12 +255,13 @@ class MainWindow(QMainWindow):
         s_inner = QWidget()
         s_layout = QVBoxLayout(s_inner)
         s_layout.setContentsMargins(8, 8, 8, 8)
-        s_layout.addWidget(self._build_settings_group())
+        s_layout.addWidget(self._build_api_group())
         s_layout.addWidget(self._build_server_group())
         s_layout.addWidget(self._build_glossary_group())
         s_layout.addWidget(self._build_skills_group())
+        s_layout.addWidget(self._build_other_group())
         restore_row = QHBoxLayout()
-        self.restore_defaults_btn = QPushButton("Przywróć domyślne")
+        self.restore_defaults_btn = QPushButton(t("button.restore_defaults"))
         self.restore_defaults_btn.setObjectName("restoreDefaultsBtn")
         self.restore_defaults_btn.clicked.connect(self._on_restore_defaults)
         self.restore_defaults_btn.setToolTip(
@@ -266,42 +274,44 @@ class MainWindow(QMainWindow):
         s_layout.addStretch(1)
         scroll.setWidget(s_inner)
         s_outer.addWidget(scroll)
-        self.tabs.addTab(settings_tab, "Ustawienia")
+        self.tabs.addTab(settings_tab, t("tab.settings"))
 
         # --- Tab: Pomoc --------------------------------------------------------
-        self.tabs.addTab(self._build_help_tab(), "Pomoc")
+        self.tabs.addTab(self._build_help_tab(), t("tab.help"))
 
         self.setCentralWidget(central)
 
     def _build_files_group(self) -> QGroupBox:
-        box = QGroupBox("Pliki")
-        grid = QGridLayout(box)
+        self.files_group = QGroupBox(t("files.group"))
+        grid = QGridLayout(self.files_group)
 
         self.input_path = QLineEdit()
         self.input_path.setObjectName("inputPath")
         self.input_path.setPlaceholderText("Plik wejściowy do tłumaczenia")
         self.input_path.textChanged.connect(self._auto_select_skill_for_input)
-        input_browse = QPushButton("Przeglądaj...")
-        input_browse.clicked.connect(self._on_browse_input)
+        self.input_browse = QPushButton(t("button.browse"))
+        self.input_browse.clicked.connect(self._on_browse_input)
 
         self.output_path = QLineEdit()
         self.output_path.setObjectName("outputPath")
         self.output_path.setPlaceholderText("Plik wyjściowy (tłumaczenie)")
-        output_browse = QPushButton("Przeglądaj...")
-        output_browse.clicked.connect(self._on_browse_output)
+        self.output_browse = QPushButton(t("button.browse"))
+        self.output_browse.clicked.connect(self._on_browse_output)
 
-        grid.addWidget(QLabel("Wejście:"), 0, 0)
+        self.input_label = QLabel(t("files.input"))
+        self.output_label = QLabel(t("files.output"))
+        grid.addWidget(self.input_label, 0, 0)
         grid.addWidget(self.input_path, 0, 1)
-        grid.addWidget(input_browse, 0, 2)
-        grid.addWidget(QLabel("Wyjście:"), 1, 0)
+        grid.addWidget(self.input_browse, 0, 2)
+        grid.addWidget(self.output_label, 1, 0)
         grid.addWidget(self.output_path, 1, 1)
-        grid.addWidget(output_browse, 1, 2)
+        grid.addWidget(self.output_browse, 1, 2)
         grid.setColumnStretch(1, 1)
-        return box
+        return self.files_group
 
     def _build_glossary_group(self) -> QGroupBox:
-        box = QGroupBox("Glosariusz (opcjonalny)")
-        layout = QVBoxLayout(box)
+        self.glossary_group = QGroupBox(t("settings.glossary_group"))
+        layout = QVBoxLayout(self.glossary_group)
 
         file_row = QHBoxLayout()
         self.glossary_path = QLineEdit()
@@ -337,11 +347,11 @@ class MainWindow(QMainWindow):
         self.glossary_count_label = QLabel("Brak pliku")
         self.glossary_count_label.setObjectName("glossaryCount")
         layout.addWidget(self.glossary_count_label)
-        return box
+        return self.glossary_group
 
     def _build_skills_group(self) -> QGroupBox:
-        box = QGroupBox("Skille (formaty tłumaczeń)")
-        layout = QVBoxLayout(box)
+        self.skills_group = QGroupBox(t("settings.skills_group"))
+        layout = QVBoxLayout(self.skills_group)
 
         self._skill_row = QWidget()
         self._skill_row_layout = QVBoxLayout(self._skill_row)
@@ -365,7 +375,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(button_row)
 
         self._reload_skills()
-        return box
+        return self.skills_group
 
     def _reload_skills(self) -> None:
         """Re-discover skills and rebuild the checkboxes, keeping enabled ones."""
@@ -481,11 +491,53 @@ class MainWindow(QMainWindow):
         return tab
 
     def _update_help(self) -> None:
-        if self.help_language.currentData() == "en":
+        lang = self.help_language.currentData()
+        set_language(lang)
+        self._refresh_ui_texts()
+        if lang == "en":
             content = self._help_text_en()
         else:
             content = self._help_text_pl()
         self.help_view.setHtml(content)
+
+    def _refresh_ui_texts(self) -> None:
+        """Odświeża wszystkie teksty w GUI po zmianie języka."""
+        # Nazwy zakładek
+        self.tabs.setTabText(0, t("tab.translation"))
+        self.tabs.setTabText(1, t("tab.settings"))
+        self.tabs.setTabText(2, t("tab.help"))
+        # Przyciski
+        self.translate_btn.setText(t("button.translate"))
+        self.cancel_btn.setText(t("button.cancel"))
+        self.restore_defaults_btn.setText(t("button.restore_defaults"))
+        # Grupy plików
+        self.files_group.setTitle(t("files.group"))
+        self.input_label.setText(t("files.input"))
+        self.output_label.setText(t("files.output"))
+        self.input_browse.setText(t("button.browse"))
+        self.output_browse.setText(t("button.browse"))
+        # Grupy ustawień
+        self.api_group.setTitle(t("settings.api_group"))
+        self.server_group.setTitle(t("settings.server_group"))
+        self.glossary_group.setTitle(t("settings.glossary_group"))
+        self.skills_group.setTitle(t("settings.skills_group"))
+        self.other_group.setTitle(t("settings.other_group"))
+        # Etykiety ustawień - API
+        for row_idx in range(self.api_form.rowCount()):
+            label_item = self.api_form.labelForField(row_idx)
+            if label_item:
+                key = self._api_label_keys.get(row_idx)
+                if key:
+                    label_item.setText(t(key))
+        # Etykiety ustawień - pozostałe
+        for row_idx in range(self.other_form.rowCount()):
+            label_item = self.other_form.labelForField(row_idx)
+            if label_item:
+                key = self._other_label_keys.get(row_idx)
+                if key:
+                    label_item.setText(t(key))
+        # Serwer
+        self.restart_server_btn.setText(t("button.restart_server"))
 
     def _help_text_pl(self) -> str:
         return """
@@ -747,9 +799,10 @@ preserving font size. Images and other non-text elements are preserved.
 OCR is not supported (text PDFs only).</p>
 """
 
-    def _build_settings_group(self) -> QGroupBox:
-        box = QGroupBox("Ustawienia API")
-        form = QFormLayout(box)
+    def _build_api_group(self) -> QGroupBox:
+        self.api_group = QGroupBox(t("settings.api_group"))
+        self.api_form = QFormLayout(self.api_group)
+        self._api_label_keys: dict[int, str] = {}
 
         self.base_url = QLineEdit()
         self.base_url.setObjectName("baseUrl")
@@ -770,6 +823,21 @@ OCR is not supported (text PDFs only).</p>
             "Nazwa modelu dostępna na serwerze.\n"
             "Przy uruchomionym serwerze lokalnym zawsze używany jest „local”."
         )
+
+        row = 0
+        self.api_form.addRow(t("settings.base_url"), self.base_url)
+        self._api_label_keys[row] = "settings.base_url"; row += 1
+        self.api_form.addRow(t("settings.api_key"), self.api_key)
+        self._api_label_keys[row] = "settings.api_key"; row += 1
+        self.api_form.addRow(t("settings.model"), self.model)
+        self._api_label_keys[row] = "settings.model"; row += 1
+        return self.api_group
+
+    def _build_other_group(self) -> QGroupBox:
+        self.other_group = QGroupBox(t("settings.other_group"))
+        self.other_form = QFormLayout(self.other_group)
+        self._other_label_keys: dict[int, str] = {}
+
         self.chunk_size = QSpinBox()
         self.chunk_size.setObjectName("chunkSize")
         self.chunk_size.setRange(500, 100_000)
@@ -823,20 +891,24 @@ OCR is not supported (text PDFs only).</p>
             "Zwykle nie musisz nic tu wpisywać."
         )
 
-        form.addRow(t("settings.base_url"), self.base_url)
-        form.addRow(t("settings.api_key"), self.api_key)
-        form.addRow(t("settings.model"), self.model)
-        form.addRow(t("settings.block_size"), self.chunk_size)
-        form.addRow(t("settings.temperature"), self.temperature)
-        form.addRow(t("settings.target_language"), self.language)
-        form.addRow(t("settings.theme"), self.theme)
-        form.addRow(t("settings.custom_prompt"), self.prompt_edit)
-        form.addRow(t("settings.skip_patterns"), self.skip_patterns_edit)
-        return box
+        row = 0
+        self.other_form.addRow(t("settings.block_size"), self.chunk_size)
+        self._other_label_keys[row] = "settings.block_size"; row += 1
+        self.other_form.addRow(t("settings.temperature"), self.temperature)
+        self._other_label_keys[row] = "settings.temperature"; row += 1
+        self.other_form.addRow(t("settings.target_language"), self.language)
+        self._other_label_keys[row] = "settings.target_language"; row += 1
+        self.other_form.addRow(t("settings.theme"), self.theme)
+        self._other_label_keys[row] = "settings.theme"; row += 1
+        self.other_form.addRow(t("settings.custom_prompt"), self.prompt_edit)
+        self._other_label_keys[row] = "settings.custom_prompt"; row += 1
+        self.other_form.addRow(t("settings.skip_patterns"), self.skip_patterns_edit)
+        self._other_label_keys[row] = "settings.skip_patterns"; row += 1
+        return self.other_group
 
     def _build_server_group(self) -> QGroupBox:
-        box = QGroupBox(t("settings.server_group"))
-        form = QFormLayout(box)
+        self.server_group = QGroupBox(t("settings.server_group"))
+        form = QFormLayout(self.server_group)
 
         self.server_port = QSpinBox()
         self.server_port.setObjectName("serverPort")
@@ -921,7 +993,7 @@ OCR is not supported (text PDFs only).</p>
         form.addRow(self.auto_start_server)
         form.addRow(self.cache_clear_after_translation)
 
-        self.restart_server_btn = QPushButton("Restart serwera")
+        self.restart_server_btn = QPushButton(t("button.restart_server"))
         self.restart_server_btn.setObjectName("restartServerBtn")
         self.restart_server_btn.setToolTip(
             "Zatrzymaj zarządzany llama-server i uruchom go ponownie "
@@ -935,7 +1007,7 @@ OCR is not supported (text PDFs only).</p>
                 "Serwer nie wystartował przy starcie programu. Sprawdź logi i uruchom program ponownie."
             )
         form.addRow(self.restart_server_btn)
-        return box
+        return self.server_group
 
     # ------------------------------------------------------------- helpers --
 
@@ -1523,12 +1595,12 @@ OCR is not supported (text PDFs only).</p>
             self._append_log(f"Nie można wczytać podglądu: {exc}")
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        # Zapisz rozmiar i pozycję okna
+        self._window_settings.setValue("windowGeometry", self.saveGeometry())
         if self._thread is not None:
             stopped = self._thread.stop()
             if not stopped:
-                self._append_log(
-                    "Ostrzeżenie: wątek tłumaczenia został zatrzymany siłą przy zamykaniu."
-                )
+                self._append_log(t("log.thread_force_stopped"))
         if self._config_file_present or (config_dir() / "config.json").is_file():
             save_settings(self._collect_settings())
         super().closeEvent(event)
