@@ -8,6 +8,12 @@ Narzędzie do tłumaczenia dokumentów oparte na AI z **interfejsem graficznym Q
 
 Aktualna wersja: **0.20.1-2**
 
+> ⚠️ **Wersja wczesna / testowa.** Jakość tłumaczenia zależy od użytego modelu LLM.
+> Obecnie najlepsze wyniki daje **TranslateGemma-4b** (~87% jakości).
+> Słabsze modele (poniżej 7B parametrów) mogą generować niekompletne tłumaczenia,
+> halucynacje i artefakty — szczególnie w formatach binarnych (DOCX, ODT, EPUB, PDF).
+> Nie publikować w publicznym AUR przed stabilizacją.
+
 ## Funkcje
 
 - 🖥️ **Interfejs graficzny Qt** zbudowany na PySide6 / Qt Widgets
@@ -52,12 +58,14 @@ makepkg -si
 
 ### Pakiety binarne
 
+Pobierz z [GitHub Releases v0.20.1](https://github.com/frs777/tlumacz/releases/tag/v0.20.1):
+
 | Format | Plik | Budowanie |
 |--------|------|-----------|
-| **AUR** | `tlumacz-0.20.1-2-any.pkg.tar.zst` | `makepkg -si` |
-| **RPM** | `tlumacz-0.20.1-2.noarch.rpm` | `rpmbuild -bb tlumacz.spec` |
-| **DEB** | `tlumacz_0.20.1-2_all.deb` | `dpkg-buildpackage -us -uc -b` |
-| **AppImage** | `tlumacz-0.20.1-2-x86_64.AppImage` | `appimagetool AppDir tlumacz.AppImage` |
+| **AUR** | [`tlumacz-0.20.1-2-any.pkg.tar.zst`](https://github.com/frs777/tlumacz/releases/download/v0.20.1/tlumacz-0.20.1-2-any.pkg.tar.zst) | `makepkg -si` |
+| **RPM** | [`tlumacz-0.20.1-2.noarch.rpm`](https://github.com/frs777/tlumacz/releases/download/v0.20.1/tlumacz-0.20.1-2.noarch.rpm) | `rpmbuild -bb tlumacz.spec` |
+| **DEB** | [`tlumacz_0.20.1-2_all.deb`](https://github.com/frs777/tlumacz/releases/download/v0.20.1/tlumacz_0.20.1-2_all.deb) | `dpkg-buildpackage -us -uc -b` |
+| **AppImage** | [`tlumacz-0.20.1-2-x86_64.AppImage`](https://github.com/frs777/tlumacz/releases/download/v0.20.1/tlumacz-0.20.1-2-x86_64.AppImage) | `appimagetool AppDir tlumacz.AppImage` |
 
 ### Wymagania systemowe
 
