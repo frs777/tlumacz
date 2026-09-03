@@ -3,7 +3,7 @@
 #   replace source with: https://github.com/frs777/tlumacz/archive/v$pkgver.tar.gz
 
 pkgname=tlumacz
-pkgver=0.20.0
+pkgver=0.20.1
 pkgrel=1
 pkgdesc="AI-powered document translator with a Qt GUI"
 arch=('any')
@@ -13,19 +13,18 @@ depends=(
     'python'
     'pyside6'
     'python-openai'
+    'python-pymupdf'
     'hicolor-icon-theme'
 )
 optdepends=(
-    'python-pypdf: PDF extraction fallback (when poppler is missing)'
     'pandoc: DOCX extraction (docx to Markdown)'
-    'poppler: PDF extraction (pdftotext)'
 )
 makedepends=(
     'python-build'
     'python-installer'
 )
 source=("tlumacz-$pkgver.tar.gz")
-b2sums=('474a5db56ef80d017f1ed9b80bf5d385f08ad4dcbefbeeb8f877e1c9dc4623ea944ec85917557753306dbe15b0cc397021065109a4a266bb836822e1d075619d')
+b2sums=('98402cd5d26a545b2a60d79497053f4aaaf0a3a2b314ad182f7089d27dbdb483f9d97c128b7a534bc0b073b5fc6ca6a04accc1a7872a4ed2fb7deb320f00be25')
 
 build() {
     cd "$pkgname-$pkgver"
