@@ -22,8 +22,8 @@ from typing import Callable, Iterable
 
 # --- Protection ------------------------------------------------------------
 
-_PLACEHOLDER = "⟦PROT_{0}⟧"
-_PLACEHOLDER_RE = re.compile(r"⟦PROT_(\d+)⟧")
+_PLACEHOLDER = "[PROT_{0}]"
+_PLACEHOLDER_RE = re.compile(r"\[PROT_(\d+)\]")
 
 _PROTECT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("fenced", re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)),

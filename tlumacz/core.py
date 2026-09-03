@@ -28,6 +28,8 @@ from .extract import (
     reconstruct_zip,
 )
 from .glossary import Glossary, MAX_PROMPT_ENTRIES
+from .pdf_extractor import extract_text_blocks, TextBlock
+
 from .preprocess import (
     DEFAULT_SKIP_PATTERNS,
     protect,
@@ -88,7 +90,7 @@ class TranslatorConfig:
     glossary_path: Optional[str] = None
     enabled_skills: list[str] = field(default_factory=list)
     chat_template_kwargs: Optional[dict] = None
-    parallel: int = 1
+    parallel: int = 2
     skip_line_patterns: list[str] = field(
         default_factory=lambda: list(DEFAULT_SKIP_PATTERNS)
     )
@@ -97,19 +99,13 @@ class TranslatorConfig:
 
     def __post_init__(self) -> None:
         base = self.system_prompt
-        if base is None:
+        if not base:
             base = (
-                "You are a professional technical translator. "
-                "The text may be written in more than one language. "
-                f"Translate ALL passages that are not already in "
-                f"{self.target_language} into {self.target_language}, "
-                "preserving Markdown formatting. Every sentence in another "
-                "language (for example English, German, French) must be "
-                "translated - do not skip, omit, or leave any passage in its "
-                "original language. Passages that are already in "
-                f"{self.target_language} must be returned unchanged. "
-                "Respond directly with the translation only. Do not include "
-                "any thinking, reasoning, or commentary."
+                f"You are a professional translator. "
+                f"Translate ALL text into {self.target_language}. "
+                f"Do not skip, omit, summarize, or shorten any content. "
+                f"Every source sentence must have a corresponding translated sentence. "
+                f"Return ONLY the translation — no explanations, comments, or notes."
             )
         self.system_prompt = base
         self._glossary: Glossary | None = None
@@ -218,11 +214,11 @@ class Translator:
 
     def _build_system_prompt(self, skill_text: str = "") -> str:
         """Build the complete system prompt once per translation.
-        
+
         Combines base prompt + skill + glossary into a single string
         to avoid redundant concatenation for each chunk.
         """
-        system = self.config.system_prompt or DEFAULT_SYSTEM_PROMPT
+        system = self.config.system_prompt
         if skill_text:
             system = system.rstrip() + "\n\n" + skill_text
         # Glossary is appended if available
@@ -255,8 +251,10 @@ class Translator:
         # Translation output should be close to the source length.
         # Scale max_tokens proportionally to chunk_size - smaller chunks
         # get smaller max_tokens to avoid wasting time on token generation.
+        # Multiplier 3072 accounts for target language expansion (~20-30% longer)
+        # and placeholder preservation in HTML/EPUB.
         chunk_ratio = len(chunk) / max(1, self.config.chunk_size)
-        max_tokens = max(256, int(1024 * chunk_ratio))
+        max_tokens = max(256, int(3072 * chunk_ratio))
         request_kwargs: dict = {
             "model": self.config.model,
             "messages": [
@@ -294,7 +292,7 @@ class Translator:
             client = openai.OpenAI(
                 base_url=self.config.base_url,
                 api_key=self.config.api_key,
-                timeout=300.0,
+                timeout=600.0,
                 max_retries=0,
             )
         if self._cancel_event.is_set():
@@ -383,7 +381,13 @@ class Translator:
                     input_path, output_path, ext,
                     progress_callback, log_callback, is_cancelled, log
                 )
-            
+            # PDF: tłumacz tekst z zachowaniem układu (PyMuPDF, bez OCR)
+            if ext == "pdf":
+                return self._translate_pdf(
+                    input_path, output_path,
+                    progress_callback, log_callback, is_cancelled, log
+                )
+
             try:
                 text = extract_text(input_path)
             except ExtractionError as exc:
@@ -430,10 +434,14 @@ class Translator:
                 executor = ThreadPoolExecutor(max_workers=self.config.parallel)
                 try:
                     futures = {executor.submit(self._translate_chunk, content, system_prompt): i for i, content in translate_segments}
+                    done_count = 0
                     for future in as_completed(futures):
                         if is_cancelled is not None and is_cancelled():
                             raise TranslationCancelledError("Translation was cancelled.")
                         translated_map[futures[future]] = future.result()
+                        done_count += 1
+                        if progress_callback is not None:
+                            progress_callback(done_count, len(translate_segments))
                 except TranslationCancelledError:
                     self.cancel()
                     executor.shutdown(wait=False, cancel_futures=True)
@@ -519,12 +527,15 @@ class Translator:
         if skill_name:
             _log(f"Using skill: {skill_name}")
 
+        # Build system prompt once for all XHTML files
+        system_prompt = self._build_system_prompt(skill_text)
+
         updates: dict[str, bytes] = {}
         for idx, rel in enumerate(xhtml_paths, start=1):
             raw = files[rel].decode("utf-8", errors="replace")
             _log(f"Tłumaczenie pliku {idx}/{len(xhtml_paths)}: {rel}")
-            translated_html = self._translate_text(
-                raw, skill_text, [],
+            translated_html = self._translate_xhtml_inplace(
+                raw, system_prompt,
                 log=_log, progress_callback=progress_callback,
                 is_cancelled=is_cancelled,
             )
@@ -536,6 +547,24 @@ class Translator:
         except Exception as exc:  # noqa: BLE001
             raise ExtractionError(f"Błąd przy budowaniu EPUB: {exc}") from exc
         _log(f"Zapisano przetłumaczony EPUB: {output_path}")
+
+        # Log cache statistics
+        cache_stats = self._cache.stats()
+        if cache_stats.get("enabled"):
+            hits = cache_stats["hits"]
+            misses = cache_stats["misses"]
+            total_requests = hits + misses
+            if total_requests > 0:
+                effectiveness = (hits / total_requests) * 100
+                _log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+            else:
+                _log("Cache: no lookups")
+
+        # Clear cache after translation if configured
+        if self.config.cache_clear_after_translation:
+            self._cache.clear()
+            _log("Cache wyczyszczony")
+
         return output_path
 
     def _translate_office_zip(
@@ -606,6 +635,171 @@ class Translator:
         except Exception as exc:  # noqa: BLE001
             raise ExtractionError(f"Błąd przy budowaniu {label}: {exc}") from exc
         _log(f"Zapisano przetłumaczony {label}: {output_path}")
+
+        # Log cache statistics
+        cache_stats = self._cache.stats()
+        if cache_stats.get("enabled"):
+            hits = cache_stats["hits"]
+            misses = cache_stats["misses"]
+            total_requests = hits + misses
+            if total_requests > 0:
+                effectiveness = (hits / total_requests) * 100
+                _log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+            else:
+                _log("Cache: no lookups")
+
+        # Clear cache after translation if configured
+        if self.config.cache_clear_after_translation:
+            self._cache.clear()
+            _log("Cache wyczyszczony")
+
+        return output_path
+
+    def _translate_pdf(
+        self,
+        input_path: str,
+        output_path: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+        log: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """Tłumaczy PDF z zachowaniem układu (tekstowe, bez OCR).
+
+        Ekstrahuje bloki tekstu z pozycjami za pomocą PyMuPDF, tłumaczy tekst,
+        a następnie wstawia przetłumaczony tekst z powrotem do PDF w oryginalnych
+        pozycjach z zachowaniem rozmiaru czcionki. Obrazki i inne elementy
+        nietekstowe są zachowywane.
+        """
+        import fitz  # PyMuPDF
+
+        def _log(msg: str) -> None:
+            if log:
+                log(msg)
+
+        _log("Ekstrakcja tekstu z PDF...")
+        try:
+            blocks = extract_text_blocks(input_path)
+        except Exception as exc:
+            raise ExtractionError(f"Nie można przetłumaczyć pliku PDF: {exc}") from exc
+
+        if not blocks:
+            raise ExtractionError("Plik PDF nie zawiera tekstu do przetłumaczenia.")
+
+        _log(f"Znaleziono {len(blocks)} blok(ów) tekstu.")
+
+        skill_text, skill_name, _ = text_for_file(
+            input_path, self.config.enabled_skills
+        )
+        if self.config.glossary_path and os.path.exists(self.config.glossary_path):
+            _log(f"Using glossary: {self.config.glossary_path}")
+        if skill_name:
+            _log(f"Using skill: {skill_name}")
+
+        system_prompt = self._build_system_prompt(skill_text)
+
+        # Otwórz PDF do edycji
+        doc = fitz.open(input_path)
+
+        # Tłumacz każdy blok i wstawiaj z powrotem do PDF
+        total_blocks = len(blocks)
+        for idx, block in enumerate(blocks):
+            if is_cancelled is not None and is_cancelled():
+                _log("Tłumaczenie anulowane przez użytkownika.")
+                doc.close()
+                raise TranslationCancelledError("Translation was cancelled.")
+
+            _log(f"Tłumaczenie bloku {idx + 1}/{total_blocks}...")
+
+            # Tłumacz tekst bloku
+            original_text = block.text
+            translated_text = self._translate_chunk(original_text, system_prompt)
+
+            # Wstaw przetłumaczony tekst z powrotem do PDF
+            page = doc[block.page_num]
+
+            # Prostokąt bloku
+            rect = fitz.Rect(block.x0, block.y0, block.x1, block.y1)
+
+            # Usuń oryginalny tekst (redact)
+            page.add_redact_annot(rect)
+            page.apply_redactions()
+
+            # Wstaw przetłumaczony tekst
+            # Użyj rozmiaru czcionki z pierwszego spana
+            font_size = block.spans[0].font_size if block.spans else 11.0
+
+            # Ścieżka do czcionki TrueType z obsługą Unicode (polskie znaki)
+            font_path = "/usr/share/fonts/noto/NotoSans-Regular.ttf"
+            font_name = "NotoSans"
+
+            # Dodaj czcionkę do strony (wymagane dla Unicode)
+            page.insert_font(fontname=font_name, fontfile=font_path)
+
+            # Spróbuj wstawić tekst z oryginalnym rozmiarem czcionki
+            rc = page.insert_textbox(
+                rect,
+                translated_text,
+                fontsize=font_size,
+                fontname=font_name,
+                align=0,  # wyrównanie do lewej
+            )
+
+            # Jeśli tekst nie mieści się, zmniejsz rozmiar czcionki
+            if rc < 0:
+                scale_factor = 0.9
+                new_font_size = font_size * scale_factor
+                _log(f"Tekst nie mieści się, zmniejszam czcionkę z {font_size:.1f} na {new_font_size:.1f}")
+
+                rc = page.insert_textbox(
+                    rect,
+                    translated_text,
+                    fontsize=new_font_size,
+                    fontname=font_name,
+                    align=0,
+                )
+
+                if rc < 0:
+                    new_font_size = font_size * 0.7
+                    _log(f"Nadal nie mieści się, zmniejszam do {new_font_size:.1f}")
+                    rc = page.insert_textbox(
+                        rect,
+                        translated_text,
+                        fontsize=new_font_size,
+                        fontname=font_name,
+                        align=0,
+                    )
+
+            if rc < 0:
+                _log(f"Uwaga: tekst nie mieści się w bloku {idx + 1}, może być ucięty.")
+
+            if progress_callback is not None:
+                progress_callback(idx + 1, total_blocks)
+
+        # Zapisz przetłumaczony PDF
+        _log(f"Zapisywanie przetłumaczonego PDF...")
+        doc.save(output_path)
+        doc.close()
+
+        _log(f"Zapisano przetłumaczony PDF: {output_path}")
+
+        # Log cache statistics
+        cache_stats = self._cache.stats()
+        if cache_stats.get("enabled"):
+            hits = cache_stats["hits"]
+            misses = cache_stats["misses"]
+            total_requests = hits + misses
+            if total_requests > 0:
+                effectiveness = (hits / total_requests) * 100
+                _log(f"Cache: {hits} hits, {misses} misses ({effectiveness:.0f}% effectiveness)")
+            else:
+                _log("Cache: no lookups")
+
+        # Clear cache after translation if configured
+        if self.config.cache_clear_after_translation:
+            self._cache.clear()
+            _log("Cache wyczyszczony")
+
         return output_path
 
     def _translate_document_xml(
@@ -647,10 +841,16 @@ class Translator:
         for elem in root.iter():
             if ext == "docx":
                 is_text = elem.tag == text_tag
+                if is_text and elem.text and elem.text.strip():
+                    slots.append((elem, "text"))
             else:
+                # ODT: tekst może być w .text lub .tail zagnieżdżonych elementów
                 is_text = elem.tag.startswith(text_ns)
-            if is_text and elem.text and elem.text.strip():
-                slots.append((elem, "text"))
+                if is_text:
+                    if elem.text and elem.text.strip():
+                        slots.append((elem, "text"))
+                    if elem.tail and elem.tail.strip():
+                        slots.append((elem, "tail"))
 
         if not slots:
             return raw_xml
@@ -669,16 +869,20 @@ class Translator:
         for prefix, uri in orig_ns:
             ET.register_namespace(prefix, uri)
 
-        slot_texts = [elem.text for elem, _ in slots]
+        slot_texts = [
+            elem.text if kind == "text" else elem.tail
+            for elem, kind in slots
+        ]
         total = 0
-        for idx, elem in enumerate(slots):
-            total += len(elem[0].text or "")
+        for idx, (elem, kind) in enumerate(slots):
+            total += len(elem.text if kind == "text" else elem.tail or "")
 
         segments: list[list[int]] = []
         current: list[int] = []
         current_len = 0
         for idx in range(len(slots)):
-            t = slots[idx][0].text or ""
+            elem, kind = slots[idx]
+            t = elem.text if kind == "text" else elem.tail or ""
             too_many = len(current) >= MAX_NODES_PER_SEGMENT
             if current and (
                 too_many or current_len + len(t) + 8 > self.config.chunk_size
@@ -695,14 +899,23 @@ class Translator:
             if is_cancelled is not None and is_cancelled():
                 log("Translation cancelled by user.")
                 raise TranslationCancelledError("Translation was cancelled.")
-            marker = "\n⟦S_%d⟧\n"
-            joined = marker.join(slots[i][0].text or "" for i in seg)
+            texts = [
+                slots[i][0].text if slots[i][1] == "text" else slots[i][0].tail or ""
+                for i in seg
+            ]
+            joined = texts[0]
+            for j, text in enumerate(texts[1:], 1):
+                joined += f"\n⟦S_{j-1}⟧\n" + text
             log(f"Tłumaczenie segmentu {seg_idx + 1}/{len(segments)}...")
             translated = self._translate_chunk(joined, system_prompt)
             parts = re.split(r"⟦S_\d+⟧", translated)
-            if len(parts) == len(seg) + 1:
-                for i, chunk_i in zip(seg, parts[1:]):
-                    slots[i][0].text = chunk_i
+            if len(parts) == len(seg):
+                for i, chunk_i in zip(seg, parts):
+                    elem, kind = slots[i]
+                    if kind == "text":
+                        elem.text = chunk_i
+                    else:
+                        elem.tail = chunk_i
             else:
                 # Model dropped/mangled separators: translate each node alone.
                 for i in seg:
@@ -710,7 +923,13 @@ class Translator:
                         raise TranslationCancelledError(
                             "Translation was cancelled."
                         )
-                    slots[i][0].text = self._translate_chunk(slots[i][0].text or "", system_prompt)
+                    elem, kind = slots[i]
+                    text = elem.text if kind == "text" else elem.tail or ""
+                    translated_node = self._translate_chunk(text, system_prompt)
+                    if kind == "text":
+                        elem.text = translated_node
+                    else:
+                        elem.tail = translated_node
             if progress_callback is not None:
                 progress_callback(seg_idx + 1, len(segments))
 
@@ -718,6 +937,128 @@ class Translator:
 
         # ET omits xmlns declarations that are unused by the tree; re-add the
         # ones present in the original so the document stays structurally intact.
+        missing = []
+        for prefix, uri in orig_ns:
+            key = f'xmlns:{prefix}="' if prefix else 'xmlns="'
+            if key not in body:
+                missing.append(f' xmlns:{prefix}="{uri}"' if prefix else f' xmlns="{uri}"')
+        if missing:
+            root_open = body.find(">")
+            body = body[:root_open] + "".join(missing) + body[root_open:]
+
+        return declaration + body
+
+    def _translate_xhtml_inplace(
+        self,
+        raw_xhtml: str,
+        system_prompt: str,
+        *,
+        log: Callable[[str], None],
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> str:
+        """Translate XHTML content in place, preserving all tags.
+
+        Similar to _translate_document_xml but for arbitrary XHTML.
+        Iterates over all elements and translates .text and .tail in place.
+        """
+        import xml.etree.ElementTree as ET
+
+        try:
+            root = ET.fromstring(raw_xhtml)
+        except ET.ParseError:
+            return self._translate_text(
+                raw_xhtml, "", [],
+                log=log, progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+
+        # Zbierz wszystkie sloty tekstowe (text i tail)
+        slots: list[tuple[object, str]] = []
+        for elem in root.iter():
+            # Pomijamy elementy które nie powinny być tłumaczone
+            # Tag może mieć namespace, więc bierzemy tylko lokalną nazwę
+            tag = elem.tag.split("}")[-1].lower() if isinstance(elem.tag, str) and "}" in elem.tag else (elem.tag.lower() if isinstance(elem.tag, str) else "")
+            if tag in ("script", "style", "head", "meta", "link", "title"):
+                continue
+            if elem.text and elem.text.strip():
+                slots.append((elem, "text"))
+            if elem.tail and elem.tail.strip():
+                slots.append((elem, "tail"))
+
+        if not slots:
+            return raw_xhtml
+
+        # Zachowaj deklarację XML i namespace'y
+        declaration = ""
+        if raw_xhtml.lstrip().startswith("<?xml"):
+            start = raw_xhtml.find("<?xml")
+            declaration = raw_xhtml[start : raw_xhtml.find("?>", start) + 2]
+
+        orig_ns: list[tuple[str, str]] = [
+            (m.group(1) or "", m.group(2))
+            for m in re.finditer(r'xmlns(?::([a-zA-Z0-9_]+))?="([^"]+)"', raw_xhtml)
+        ]
+        for prefix, uri in orig_ns:
+            ET.register_namespace(prefix, uri)
+
+        # Podziel na segmenty
+        segments: list[list[int]] = []
+        current: list[int] = []
+        current_len = 0
+        for idx in range(len(slots)):
+            elem, kind = slots[idx]
+            t = elem.text if kind == "text" else elem.tail or ""
+            too_many = len(current) >= MAX_NODES_PER_SEGMENT
+            if current and (
+                too_many or current_len + len(t) + 8 > self.config.chunk_size
+            ):
+                segments.append(current)
+                current, current_len = [], 0
+            current.append(idx)
+            current_len += len(t) + 8
+
+        if current:
+            segments.append(current)
+
+        for seg_idx, seg in enumerate(segments):
+            if is_cancelled is not None and is_cancelled():
+                log("Translation cancelled by user.")
+                raise TranslationCancelledError("Translation was cancelled.")
+            texts = [
+                slots[i][0].text if slots[i][1] == "text" else slots[i][0].tail or ""
+                for i in seg
+            ]
+            joined = texts[0]
+            for j, text in enumerate(texts[1:], 1):
+                joined += f"\n⟦S_{j-1}⟧\n" + text
+            log(f"Tłumaczenie segmentu {seg_idx + 1}/{len(segments)}...")
+            translated = self._translate_chunk(joined, system_prompt)
+            parts = re.split(r"⟦S_\d+⟧", translated)
+            if len(parts) == len(seg):
+                for i, chunk_i in zip(seg, parts):
+                    elem, kind = slots[i]
+                    if kind == "text":
+                        elem.text = chunk_i
+                    else:
+                        elem.tail = chunk_i
+            else:
+                for i in seg:
+                    if is_cancelled is not None and is_cancelled():
+                        raise TranslationCancelledError("Translation was cancelled.")
+                    elem, kind = slots[i]
+                    text = elem.text if kind == "text" else elem.tail or ""
+                    translated_node = self._translate_chunk(text, system_prompt)
+                    if kind == "text":
+                        elem.text = translated_node
+                    else:
+                        elem.tail = translated_node
+            if progress_callback is not None:
+                progress_callback(seg_idx + 1, len(segments))
+
+        body = ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+        # Przywróć namespace'y
         missing = []
         for prefix, uri in orig_ns:
             key = f'xmlns:{prefix}="' if prefix else 'xmlns="'
@@ -799,16 +1140,20 @@ class Translator:
         return patterns
 
 
-_EOS_TOKEN_RE = re.compile(r"(<\|im_end\|>|<\|end_of_turn\|>|<\|eot_id\|>|</s>)\s*$")
-_START_TOKEN_RE = re.compile(r"\s*<\|im_start\|>")
+_EOS_TOKEN_RE = re.compile(
+    r"<\|im_end\|>?|<\|end_of_turn\|>?|<\|eot_id\|>?|<\|file_separator\|>|</s>"
+)
+_START_TOKEN_RE = re.compile(r"<\|im_start\|>?")
 
 
 def _strip_eos_tokens(content: str) -> str:
     """Remove chat-template control tokens leaked into the output.
 
     Some models (e.g. chatml templates) emit their control tokens (``<|im_end|>``,
-    ``<|im_start|>``, ``</s>``, ...) at the end of a response even though they
-    are not part of the translation. They must not land in the output file.
+    ``<|im_start|>``, ``</s>``, ...) even in the middle of a response, sometimes
+    truncated (e.g. ``<|im_start`` without closing ``|>``). They must not land
+    in the output file.
     """
     content = _START_TOKEN_RE.sub("", content)
-    return _EOS_TOKEN_RE.sub("", content)
+    content = _EOS_TOKEN_RE.sub("", content)
+    return content

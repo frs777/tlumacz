@@ -491,8 +491,7 @@ class MainWindow(QMainWindow):
 <h2>Tłumacz — pomoc</h2>
 <p>Tłumacz to narzędzie do tłumaczenia dokumentów (Markdown, TXT, HTML,
 PDF, DOCX, ODT, EPUB) za pomocą modeli LLM zgodnych z API OpenAI.
-Pliki EPUB, DOCX i ODT są tłumaczone z zachowaniem oryginalnego formatu;
-PDF jest wyodrębniany do Markdown i zapisywany jako <code>.md</code>.</p>
+Pliki EPUB, DOCX, ODT i PDF są tłumaczone z zachowaniem oryginalnego formatu.</p>
 
 <h3>1. Konfiguracja modelu (zakładka „Ustawienia”)</h3>
 <ul>
@@ -614,10 +613,11 @@ formatu 1:1 — wynik ma to samo rozszerzenie co plik wejściowy
 (<code>.epub</code>, <code>.docx</code>, <code>.odt</code>). Tłumaczony jest
 tylko tekst wewnątrz dokumentu; struktura, style, tabele i pozostałe pliki
 archiwum (obrazki, czcionki, ustawienia) zostają nietknięte.</p>
-<p><b>PDF</b> — jako dokument trudny do odtworzenia 1:1: tekst jest
-wyodrębniany (<code>pdftotext</code>/pypdf) i wynik zapisywany jako Markdown
-(<code>.md</code>). Aby przywrócić go do PDF, otwórz plik <code>.md</code>
-w przeglądarce lub edytorze i użyj „Drukuj → Zapisz jako PDF".</p>
+<p><b>PDF</b> — tłumaczenie tekstowe z zachowaniem układu strony.
+Tekst jest wyodrębniany z pozycjami (PyMuPDF), tłumaczony i wstawiany
+z powrotem w oryginalnych pozycjach z zachowaniem rozmiaru czcionki.
+Obrazki i inne elementy nietekstowe są zachowywane. OCR nie jest
+obsługiwane (tylko tekstowe PDF).</p>
 """
 
     def _help_text_en(self) -> str:
@@ -625,8 +625,7 @@ w przeglądarce lub edytorze i użyj „Drukuj → Zapisz jako PDF".</p>
 <h2>Tłumacz — help</h2>
 <p>Tłumacz is a tool for translating documents (Markdown, TXT, HTML,
 PDF, DOCX, ODT, EPUB) using LLM models that speak the OpenAI-compatible API.
-EPUB, DOCX and ODT files are translated while keeping the original format;
-PDF is extracted to Markdown and saved as a <code>.md</code> file.</p>
+EPUB, DOCX, ODT and PDF files are translated while keeping the original format.</p>
 
 <h3>1. Model setup (Settings tab)</h3>
 <ul>
@@ -741,10 +740,10 @@ the original format 1:1 — the result keeps the same extension as the input
 (<code>.epub</code>, <code>.docx</code>, <code>.odt</code>). Only the text
 inside the document is translated; the structure, styles, tables and all other
 archive files (images, fonts, settings) stay untouched.</p>
-<p><b>PDF</b> — as a document that is hard to rebuild 1:1: the text is
-extracted (<code>pdftotext</code>/pypdf) and the result is saved as Markdown
-(<code>.md</code>). To turn it back into a PDF, open the <code>.md</code> file
-in a browser or editor and use “Print → Save as PDF”.</p>
+<p><b>PDF</b> — text translation preserving page layout. Text is extracted
+with positions (PyMuPDF), translated and inserted back at original positions
+preserving font size. Images and other non-text elements are preserved.
+OCR is not supported (text PDFs only).</p>
 """
 
     def _build_settings_group(self) -> QGroupBox:
@@ -903,10 +902,21 @@ in a browser or editor and use “Print → Save as PDF”.</p>
             "(np. translategemma). Jeśli model nie startuje, wybierz chatml."
         )
 
+        self.server_parallel = QSpinBox()
+        self.server_parallel.setObjectName("serverParallel")
+        self.server_parallel.setRange(1, 4)
+        self.server_parallel.setValue(1)
+        self.server_parallel.setToolTip(
+            "Liczba równoległych wątków tłumaczenia (1-4).\n"
+            "Więcej wątków = szybciej, ale wymaga więcej RAM/VRAM.\n"
+            "Dla parallel > 1 zwiększ ctx-size serwera (np. 16384)."
+        )
+
         form.addRow("Port:", self.server_port)
         form.addRow("Obliczenia serwera:", self.server_compute_mode)
         form.addRow("Plik modelu (GGUF):", gguf_row)
         form.addRow("Szablon czatu:", self.server_chat_template)
+        form.addRow("Wątki (parallel):", self.server_parallel)
         form.addRow(self.auto_start_server)
         form.addRow(self.cache_clear_after_translation)
 
@@ -944,7 +954,7 @@ in a browser or editor and use “Print → Save as PDF”.</p>
             ),
             chunk_size=self.chunk_size.value(),
             temperature=self.temperature.value(),
-            parallel=1,
+            parallel=self.server_parallel.value(),
             target_language=self.language.currentText(),
             glossary_path=self.glossary_path.text().strip() or None,
             system_prompt=self.prompt_edit.toPlainText().strip() or None,
@@ -973,6 +983,7 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         settings.server_compute_mode = self.server_compute_mode.currentData()
         settings.server_gguf_path = self.server_gguf_path.text().strip()
         settings.server_chat_template = self.server_chat_template.currentData()
+        settings.server_parallel = self.server_parallel.value()
         settings.auto_start_server = self.auto_start_server.isChecked()
         settings.cache_clear_after_translation = self.cache_clear_after_translation.isChecked()
         return settings
@@ -1013,6 +1024,7 @@ in a browser or editor and use “Print → Save as PDF”.</p>
         self.server_gguf_path.setText(s.server_gguf_path)
         template_index = self.server_chat_template.findData(s.server_chat_template)
         self.server_chat_template.setCurrentIndex(template_index)
+        self.server_parallel.setValue(s.server_parallel)
         self.auto_start_server.setChecked(s.auto_start_server)
         self.cache_clear_after_translation.setChecked(s.cache_clear_after_translation)
 
@@ -1525,12 +1537,9 @@ def _default_output_path(input_path: str, language: str) -> str:
     """Return ``name_<suffix>.ext`` next to the input file.
 
     The suffix follows the selected target language (``pl``, ``en``, ...).
-    DOCX, ODT and EPUB are translated back to the original format, so they
-    keep their extension; only PDF is translated to Markdown (``.md``).
+    DOCX, ODT, EPUB and PDF are translated back to the original format, so they
+    keep their extension.
     """
     suffix = LANGUAGE_SUFFIXES.get(language, "pl")
     path = Path(input_path)
-    ext = path.suffix.lower().lstrip(".")
-    if ext == "pdf":
-        return str(path.with_name(f"{path.stem}_{suffix}.md"))
     return str(path.with_name(f"{path.stem}_{suffix}{path.suffix}"))

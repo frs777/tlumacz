@@ -3,13 +3,14 @@ name: ODT
 formats: odt
 ---
 You are translating the extracted text of an OpenDocument (.odt) document.
-The text was converted to Markdown-like form. Follow these rules:
+The text was converted to Markdown-like form, paragraphs and tables interleaved.
+Follow these rules:
 - Preserve the document structure: headings, paragraphs, lists and tables.
 - Keep tables as Markdown tables: preserve the header row and column layout;
   translate only the cell contents.
-- Keep field names, variable names, URLs, identifiers and email addresses
-  unchanged; do not translate code or formula fragments.
-- Keep metadata (title, subject, creator) values unchanged; translate prose.
+- Keep numbering, bullet markers and indentation semantics implied by the text.
+- Do not translate inline code, URLs, identifiers, file names or email addresses.
+- Keep metadata (author, title, subject) values unchanged; translate only prose.
 - Translate captions, footnotes and references consistently with the glossary.
 - Do not change the number of blank lines between blocks.
 - Translate the ENTIRE source text: never summarize, shorten, omit, merge, reorder, or repeat content; every source sentence must have a corresponding translated sentence, including repeated sentences.

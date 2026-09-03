@@ -97,6 +97,43 @@ Dopasowanie `max_tokens` do `chunk_size` zamiast stałego limitu.
 - Równoległe tłumaczenie wielu plików
 - Streaming
 
+### Pipeline Hybrydowy — PORZUCONY (2 września 2026)
+
+Próba przyspieszenia tłumaczenia przez podział na dwa etapy (szybki model wstępny + korekta) **nie powiodła się** i została wycofana.
+
+**Plan:** Hy-MT2-1.8B (szybki, 70% jakości) tłumaczy wstępnie → TranslateGemma-4b (wolniejszy, 87% jakości) koryguje.
+
+**Wyniki:**
+- **Markdown:** ~2 min, ~99.7% jakości — działało świetnie
+- **ODT/DOCX:** 1:16:06, jakość ~0% — kompletna katastrofa
+
+**Dlaczego nie zadziałało dla formatów binarnych:**
+1. Tłumaczenie in-place XML (węzły tekstowe w ZIP) produkuje krótkie, oderwane fragmenty tekstu
+2. Hy-MT2-1.8B na takich fragmentach halucynuje — powtarza ten sam akapit 15+ razy, ignoruje instrukcje, miesza języki
+3. TranslateGemma-4b w etapie 2 nie była w stanie skorygować tak zniszczonego wejścia — tylko przepuszczała śmieć dalej
+4. Wyciek promptów systemowych do wyjścia ("Proszę o poprawione tłumaczenie:")
+
+**Wniosek architektoniczny:** Pipeline hybrydowy wymaga modelu wstępnego o jakości ≥85% żeby generować użyteczne wejście dla korekty. Ale jeśli model wstępny ma 85%+ jakości, to drugi etap korekty jest zbędny — można od razu użyć tego modelu. **Pipeline hybrydowy nie ma sensu ekonomicznego** dla dostępnych modeli.
+
+**Kod usunięty** — nie ma co utrzymywać martwego kodu.
+
+---
+
+## Bug: skill ODT niekompatybilny z kodem (3 września 2026)
+
+Skill ODT (`tlumacz/skills/odt.md`) opisuje tłumaczenie "tekstu skonwertowanego do Markdown", ale `_translate_document_xml` tłumaczy węzły XML in-place. Model dostaje sprzeczne instrukcje.
+
+**Wyniki testów (test3.odt, 2150 znaków, EN+FR+DE):**
+
+| Konfiguracja | Czas | Jakość |
+|---|---|---|
+| Ze skillem ODT (stary, 1644 znaki) | 4:30 | Wyciek promptów, FR/DE nieprzetłumaczone |
+| Bez skilla ODT | 1:05 | Dobre tłumaczenie |
+| Nowy krótki skill ODT (450 znaków) | 5:50 | Halucynacje, powtórzenia x10 |
+| Hy-MT2-1.8B ręcznie (prosty prompt) | 1-2 min | Najlepszy wynik |
+
+**Wniosek:** Skill ODT pogarsza jakość. Kod trzeba naprawić — łączyć węzły XML w większe segmenty lub zaktualizować skill.
+
 ---
 
 ## Uwagi techniczne

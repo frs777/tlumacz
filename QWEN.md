@@ -1,6 +1,6 @@
 # QWEN.md — Tłumacz
 
-Narzędzie do tłumaczenia dokumentów oparte na AI z interfejsem graficznym Qt (PySide6). Tłumaczy pliki Markdown/tekstowe/DOCX/ODT/EPUB na polski (lub inny język) przy użyciu dowolnego API zgodnego z OpenAI — testowane z lokalnym serwerem Ollama/llama.cpp.
+Narzędzie do tłumaczenia dokumentów oparte na AI z interfejsem graficznym Qt (PySide6). Tłumaczy pliki Markdown/tekstowe/DOCX/ODT/EPUB/PDF na polski (lub inny język) przy użyciu dowolnego API zgodnego z OpenAI — testowane z lokalnym serwerem Ollama/llama.cpp.
 
 **Wersja:** 0.19.1  
 **Status:** wersja robocza/testowa  
@@ -13,6 +13,7 @@ Narzędzie do tłumaczenia dokumentów oparte na AI z interfejsem graficznym Qt 
 - **Python 3.10+**
 - **PySide6** (Qt 6) — interfejs graficzny
 - **openai** SDK — komunikacja z API tłumaczenia
+- **PyMuPDF** — ekstrakcja i zapis tekstu w PDF z zachowaniem pozycji
 - **llama-server** — opcjonalnie zarządzany lokalny serwer z modelem GGUF
 - **SQLite** — cache tłumaczeń (`~/.config/tlumacz/cache.db`)
 - **pytest** — testy
@@ -118,6 +119,7 @@ makepkg -si
 - **DOCX/ODT** — round-trip z zachowaniem struktury XML
 - **EPUB** — round-trip z zachowaniem struktury archiwum
 - **HTML** — tłumaczenie z ochroną tagów
+- **PDF** — tłumaczenie tekstowe z zachowaniem układu (PyMuPDF, bez OCR)
 
 ### System skills
 
@@ -179,8 +181,8 @@ Ustawienia w `~/.config/tlumacz/config.json`:
 
 ## Znane ograniczenia
 
-- **Jakość tłumaczenia** zależy od modelu (1.8B modele szybkie ale z błędami)
-- **Parallel translation** — zaimplementowane ale niepodłączone do GUI (wymaga więcej RAM/VRAM)
+- **Jakość tłumaczenia** zależy od modelu
+- **Skill ODT niekompatybilny z kodem** — opisuje "Markdown" ale kod tłumaczy XML in-place → wyciek promptów. ODT bez skilla działa poprawnie. Do naprawy.
 - **Wielojęzyczne dokumenty** — mogą wymagać wzmocnienia promptów
 - **HTML** — tłumaczenie z ochroną tagów wymaga dalszych testów
 

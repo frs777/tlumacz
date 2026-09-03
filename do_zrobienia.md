@@ -46,19 +46,42 @@ Lista pomysłów i niedokończonych usprawnień projektu **tlumacz**.
 - [x] **Glosariusz / słownik** — CSV + wpisy z GUI.
 - [x] **Motyw (theme)** — dzień / noc / system.
 - [x] **Wzorce pomijania per typ pliku** — skille + wzorce domyślne + własne regexy.
-- [x] **Szablon skilla dla użytkowników** — `SKILL_TEMPLATE.md` i przycisk „Nowy skilla...”.
+- [x] **Szablon skilla dla użytkowników** — `SKILL_TEMPLATE.md` i przycisk „Nowy skilla...".
 - [x] **Skille PDF / DOCX / ODT / EPUB** — ekstrakcja i reguły formatów.
 - [x] **Round-trip EPUB / DOCX / ODT (1:1)** — zachowanie struktury i plików nietreściowych.
-- [ ] **PDF round-trip** — powrót z przetłumaczonego tekstu do PDF.
-- [ ] **OCR dla skanów PDF i obrazów (Tesseract)** — OCR + obsługa png/jpg/webp/bmp.
+- [ ] **PDF round-trip** — tłumaczenie tekstowe z zachowaniem układu (PyMuPDF, bez OCR). **W trakcie wdrażania.**
+- [ ] **OCR dla skanów PDF i obrazów (Tesseract)** — OCR + obsługa png/jpg/webp/bmp. **Architektura przygotowana pod przyszłe dodanie.**
 
-### Wyniki testów modeli — stan roboczy
+### Bug: skill ODT niekompatybilny z kodem — NAPRAWIONY (3 września 2026)
 
-- **Hy-MT2-1.8B-Q4_K_S** — obecny szybki model testowy. Tłumaczy, ale przy trudniejszych/wielojęzycznych dokumentach pozostawia fragmenty w języku źródłowym lub miesza języki. Jest jednak wyraźnie szybszy od dotychczas testowanych większych modeli.
-- **DOCX / ODT / EPUB** — round-trip formatów działa; głównym kryterium testów jest zachowanie struktury/formatowania, a nie tylko jakość językowa.
-- **EPUB** — struktura przechodzi, ale test na wielojęzycznym dokumencie pokazał pozostawione fragmenty chińskie/angielskie. Nie traktować jako dowodu uszkodzenia pipeline'u formatu.
-- **TranslateGemma** — wyższa jakość niż Hy-MT2, ale znacznie wolniejsza w dotychczasowych testach.
+**Problem:** Skill ODT (`tlumacz/skills/odt.md`) opisywał tłumaczenie "tekstu skonwertowanego do Markdown", ale kod (`_translate_document_xml`) tłumaczy **węzły XML in-place**, nie Markdown. Model dostawał sprzeczne instrukcje → wyciek promptów, halucynacje, nieprzetłumaczone sekcje.
+
+**Naprawiono:**
+- [x] Zaktualizowano skill ODT — opisuje XML in-place, nie Markdown
+- [x] Naprawiono `_translate_document_xml` — dodano obsługę `.tail` dla zagnieżdżonych elementów
+- [x] Dodano test regresji — testy ODT przechodzą
+
+### Wyniki testów modeli — stan na 3 września 2026
+
+Szczegółowy raport: `jakosc_tlumaczenia_v0.20.0.md`
+
+- **Hy-MT2-1.8B-Q4_K_S (GPU)** — 4:15, jakość 70%, ucinanie tłumaczenia. Szybki ale za słaby jakościowo.
+- **Hy-MT2-7B-Q4_K_M + glosariusz (GPU)** — 19:05, jakość 75%, nadal ucinanie. **Dyskwalifikacja** — 4.4x wolniej niż 1.8B.
+- **TranslateGemma-4b-it.Q4_K_M (GPU)** — 10:17, jakość 87%, kompletne tłumaczenie. **ZWYCIĘZCA** — najlepszy kompromis jakość/szybkość.
+- **TranslateGemma-4b-it.Q4_K_M (CPU)** — 11:31, jakość 87%, ale ucinanie 40% treści. Problem nie związany z GPU/CPU — prawdopodobnie stan serwera lub cache.
 - **Salamandra 2B** — odrzucona do dalszych testów; wyniki wskazywały na potrzebę specjalnego oprogramowania/obsługi.
+
+**Pipeline hybrydowy (Hy-MT2-1.8B + TranslateGemma-4b) — porzucony 2 września 2026:**
+- Działał dobrze tylko dla Markdown (~2 min, ~99.7% jakości).
+- Dla formatów binarnych (ODT/DOCX) generował śmieci: powtarzający się tekst, wyciek promptów, nieprzetłumaczone fragmenty.
+- Tłumaczenie in-place XML nie nadaje się dla słabszego modelu etapu 1.
+- Rezygnacja: główny przypadek użycia (dokumenty naukowe/prawne w ODT/DOCX) nie działał.
+
+**Wnioski:**
+- TranslateGemma-4b na GPU jest optymalnym wyborem dla codziennego użytku (87% jakości, 10:17 czas)
+- Hy-MT2-1.8B jest za słaby jakościowo nawet jako model wstępny (70% jakości, generuje śmieci w XML)
+- Problem ucinania na CPU wymaga dalszego badania (te same skills, ten sam chunk 4000)
+- Stare (krótsze) skills dają lepsze rezultaty niż rozszerzone (uniknąć podwojenia promptu)
 
 ## Pakowanie / repo
 

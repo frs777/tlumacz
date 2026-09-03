@@ -1,9 +1,9 @@
 # Podsumowanie projektu — Tłumacz
 
-**Data:** 2 września 2026
+**Data:** 3 września 2026
 **Repozytorium:** https://github.com/frs777/tlumacz
-**Wersja:** 0.19.1
-**Status:** wersja robocza/testowa; brak publikacji 0.19.1 w publicznym AUR.
+**Wersja:** 0.20.0
+**Status:** wersja robocza/testowa; brak publikacji w publicznym AUR.
 
 ---
 
@@ -11,20 +11,68 @@
 
 Projekt jest aplikacją Qt/PySide6 do tłumaczenia dokumentów przez API zgodne z OpenAI oraz przez zarządzany lokalny `llama-server` z modelem GGUF.
 
-Najważniejsza funkcja projektu — **tłumaczenie** — działa, ale jakość zależy od modelu. W testach Hy-MT2-1.8B-Q4_K_S okazał się bardzo szybki, lecz przy dokumentach wielojęzycznych pozostawia część treści w języku źródłowym. Większe modele dawały lepszą jakość, ale były wolniejsze.
+Najważniejsza funkcja projektu — **tłumaczenie** — działa, ale jakość zależy od modelu. Po serii testów (wrzesień 2026) wybrano TranslateGemma-4b jako optymalny kompromis jakość/szybkość.
 
-### Testy formatów
+### Testy formatów (3 września 2026)
 
-- **Markdown/TXT/HTML:** działają, ale HTML i dokumenty wielojęzyczne wymagają dalszego wzmocnienia promptów.
-- **DOCX:** round-trip zachowuje strukturę dokumentu; jakość językowa Hy-MT2 jest nierówna.
-- **ODT:** round-trip działa; główne kryterium oceny to zachowanie struktury/formatowania.
-- **EPUB:** round-trip działa i zachowuje strukturę archiwum, ale test wielojęzyczny ujawnił pozostawione fragmenty chińskie/angielskie.
+Wszystkie formaty tekstowe działają poprawnie po serii napraw:
 
-### Modele
+- **Markdown/TXT:** ✅ działają poprawnie
+- **HTML:** ✅ działa poprawnie (naprawiono placeholdery `⟦PROT_N⟧` → `[PROT_N]`)
+- **DOCX:** ✅ round-trip zachowuje strukturę dokumentu
+- **ODT:** ✅ round-trip działa (naprawiono bug z `.tail` w zagnieżdżonych elementach)
+- **EPUB:** ✅ round-trip działa (naprawiono strukturę XHTML, dodano `_translate_xhtml_inplace`)
+- **PDF:** ⏳ w trakcie wdrażania — tłumaczenie tekstowe z zachowaniem układu (PyMuPDF, bez OCR)
 
-- **Hy-MT2-1.8B-Q4_K_S** — obecny szybki model testowy; dobry do testów pipeline'u i wydajności, ale prawdopodobnie za słaby do docelowej jakości.
-- **TranslateGemma** — lepsza jakość w dotychczasowych testach, lecz wyraźnie wolniejszy.
-- **Salamandra 2B** — odłożona; testy sugerowały potrzebę specjalnej obsługi.
+### Naprawione bugi (3 września 2026)
+
+1. Separatory `⟦S_%d⟧` → numerowane `⟦S_0⟧`, `⟦S_1⟧` w `_translate_document_xml`
+2. Obsługa `.tail` dla ODT (tekst w zagnieżdżonych elementach)
+3. `_strip_eos_tokens` — regexy w dowolnym miejscu + `<|file_separator|>`
+4. Prompt główny uproszczony (usunięto "preserving Markdown formatting")
+5. Skill ODT i EPUB zaktualizowane
+6. `_translate_xhtml_inplace` — nowa metoda dla EPUB/HTML
+7. `max_tokens` — mnożnik 2048 → 3072
+8. Placeholdery `⟦PROT_N⟧` → `[PROT_N]` (model lepiej radzi sobie z nawiasami)
+
+### Plan wdrożenia PDF
+
+**Cel:** Tłumaczenie PDF z zachowaniem układu (tekstowe, bez OCR).
+
+**Zależności:** PyMuPDF (dodany do `pyproject.toml`).
+
+**Fazy:**
+1. Ekstrakcja tekstu z pozycjami (PyMuPDF)
+2. Tłumaczenie z zachowaniem struktury
+3. Wstawianie tekstu z powrotem do PDF
+4. Integracja z GUI
+5. Testy
+
+**Architektura pod OCR:** Interfejs `TextExtractor` z implementacją `PyMuPDFExtractor` i przyszłą `OCRExtractor`.
+
+### Modele — wyniki testów (2 września 2026)
+
+Szczegółowy raport: `jakosc_tlumaczenia_v0.20.0.md`
+
+| Model | Tryb | Czas | Jakość | Status |
+|-------|------|------|--------|--------|
+| Hy-MT2-1.8B-Q4_K_S | GPU | 4:15 | 70% | ❌ Ucinanie |
+| Hy-MT2-7B-Q4_K_M + glos | GPU | 19:05 | 75% | ❌ Dyskwalifikacja (wolny) |
+| **TranslateGemma-4b-it.Q4_K_M** | **GPU** | **10:17** | **87%** | ✅ **ZWYCIĘZCA** |
+| TranslateGemma-4b-it.Q4_K_M | CPU | 11:31 | 87% | ⚠️ Ucinanie 40% (do zbadania) |
+| Salamandra 2B | — | — | — |  Odrzucona |
+
+**Wybrany model:** TranslateGemma-4b-it.Q4_K_M na GPU (87% jakości, 10:17 czas, kompletne tłumaczenie)
+
+### Pipeline Hybrydowy — PORZUCONY
+
+Próba wdrożenia pipeline'u "wstępne tłumaczenie + korekta" (Hy-MT2-1.8B → TranslateGemma-4b) zakończyła się niepowodzeniem i kod został usunięty (2 września 2026).
+
+**Dlaczego nie zadziałało:**
+- Działał poprawnie **tylko dla Markdown** (~2 min, ~99.7% jakości)
+- Dla **ODT/DOCX** (główny przypadek użycia — dokumenty naukowe/prawne) generował kompletny śmieć: powtarzający się tekst, wyciek promptów, nieprzetłumaczone fragmenty, mieszankę języków
+- Przyczyna: tłumaczenie in-place XML generuje krótkie, fragmentaryczne segmenty — Hy-MT2-1.8B (70% jakości) halucynuje na takich danych, a TranslateGemma nie była w stanie tego skorygować
+- **Wniosek**: nie ma sensu utrzymywać funkcji hybrydowej tylko dla Markdown; główny przypadek użycia (dokumenty binarne) nie działał
 
 ---
 
@@ -104,9 +152,10 @@ Przed kolejnym wydaniem wymagane są ponowne testy tłumaczenia, szczególnie na
 1. ~~Dodać **Restart serwera** w Ustawieniach~~ — zaimplementowano.
 2. ~~Nie zmieniać działającego stopera~~ — jest już gotowy.
 3. ~~Dodać **czyszczenie cache po tłumaczeniu**~~ — zaimplementowano.
-4. Testować nowe modele 2B na ODT i EPUB.
-5. Wzmocnić prompty dla formatów, szczególnie dokumentów wielojęzycznych.
-6. Wybrać model zapewniający rozsądny kompromis jakość/szybkość.
-7. Dopiero po stabilizacji rozważać kolejne wydanie i publiczne AUR.
+4. ~~Wybrać model~~ — TranslateGemma-4b-it.Q4_K_M na GPU (87% jakości, 10:17).
+5. **Zbadać problem ucinania na CPU** — te same skills i chunk 4000 co GPU, ale 40% treści ucięte.
+6. **Zoptymalizować wykorzystanie CPU** — obecne obciążenie ~60%, możliwość równoległości.
+7. Wzmocnić prompty dla formatów, szczególnie dokumentów wielojęzycznych.
+8. Dopiero po stabilizacji rozważać kolejne wydanie i publiczne AUR.
 
 Pełna lista: [do_zrobienia.md](do_zrobienia.md).

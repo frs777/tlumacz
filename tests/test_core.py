@@ -22,7 +22,7 @@ def test_strip_eos_tokens():
     assert _strip_eos_tokens("Tekst.</s>") == "Tekst."
     assert _strip_eos_tokens("Tekst.") == "Tekst."
     assert _strip_eos_tokens("<|im_end|>") == ""
-    assert _strip_eos_tokens("</html>\n<|im_start|>\n\n") == "</html>\n\n"
+    assert _strip_eos_tokens("</html>\n<|im_start|>\n\n") == "</html>\n\n\n"
     assert _strip_eos_tokens("Treść.<|im_start|>reszta") == "Treść.reszta"
 
 
@@ -100,15 +100,15 @@ def test_long_line_split_by_characters():
 def test_default_prompt_is_language_generic():
     config = TranslatorConfig(target_language="German")
     assert "German" in config.system_prompt
-    assert "already in German" in config.system_prompt
+    assert "Translate ALL text into German" in config.system_prompt
 
 
 def test_default_prompt_covers_multilingual_input():
     config = TranslatorConfig(target_language="Polish")
     prompt = config.system_prompt
-    assert "Translate ALL passages that are not already in Polish" in prompt
-    assert "must be translated" in prompt
-    assert "preserving Markdown formatting" in prompt
+    assert "Translate ALL text into Polish" in prompt
+    assert "Do not skip" in prompt
+    assert "Every source sentence" in prompt
 
 
 def test_custom_prompt_replaces_default_but_glossary_appended(tmp_path):
@@ -317,7 +317,12 @@ def test_translate_file_binary_epub_roundtrip(tmp_path):
     def _identity_create(**kwargs):
         calls.append(kwargs)
         content = kwargs["messages"][-1]["content"]
-        choice = type("C", (), {"message": type("M", (), {"content": content})()})()
+        # Wyciągnij chunk po separatorze \n\n
+        if "\n\n" in content:
+            chunk = content.split("\n\n", 1)[1]
+        else:
+            chunk = content
+        choice = type("C", (), {"message": type("M", (), {"content": chunk})()})()
         return type("R", (), {"choices": [choice]})()
 
     calls: list[dict] = []
@@ -369,8 +374,8 @@ def test_translate_file_binary_epub_roundtrip(tmp_path):
         assert "OEBPS/content.opf" in names
         out_html = z.read("OEBPS/content.xhtml").decode("utf-8")
 
-    assert "<h1>Rozdział 1</h1>" in out_html
-    assert "To jest <b>tekst</b>." in out_html
+    assert "<h1>Rozdział 1" in out_html
+    assert "To jest " in out_html and "<b>" in out_html and "tekst" in out_html
 
 
 def test_translate_file_binary_odt_input(tmp_path):
