@@ -477,14 +477,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                log("Cache: brak zapytań")
+                log("Bufor: brak zapytań")
         
         # Clear cache after translation if configured (for accurate benchmarking)
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            log("Cache wyczyszczony po tłumaczeniu")
+            log("Bufor wyczyszczony po tłumaczeniu")
         
         self._cache.reset_stats()
 
@@ -556,14 +556,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                _log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                _log("Cache: brak zapytań")
+                _log("Bufor: brak zapytań")
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            _log("Cache wyczyszczony")
+            _log("Bufor wyczyszczony")
 
         return output_path
 
@@ -644,14 +644,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                _log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                _log("Cache: brak zapytań")
+                _log("Bufor: brak zapytań")
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            _log("Cache wyczyszczony")
+            _log("Bufor wyczyszczony")
 
         return output_path
 
@@ -791,14 +791,14 @@ class Translator:
             total_requests = hits + misses
             if total_requests > 0:
                 effectiveness = (hits / total_requests) * 100
-                _log(f"Cache: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
+                _log(f"Bufor: {hits} trafień, {misses} pudł ({effectiveness:.0f}% skuteczności)")
             else:
-                _log("Cache: brak zapytań")
+                _log("Bufor: brak zapytań")
 
         # Clear cache after translation if configured
         if self.config.cache_clear_after_translation:
             self._cache.clear()
-            _log("Cache wyczyszczony")
+            _log("Bufor wyczyszczony")
 
         return output_path
 
