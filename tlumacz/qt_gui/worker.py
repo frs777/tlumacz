@@ -35,6 +35,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ..core import Translator, TranslatorConfig, TranslationCancelledError
+from ..i18n import t
 from ..server import LlamaServer, ServerStartError
 
 logger = logging.getLogger(__name__)
@@ -122,7 +123,7 @@ class TranslateWorker(QObject):
         thread if the cooperative path does not exit the process quickly.
         """
         if self._cancelled:
-            self.failed.emit("Translation was cancelled.")
+            self.failed.emit(t("log.translation_cancelled"))
             return
 
         context = mp.get_context("spawn")
@@ -172,7 +173,7 @@ class TranslateWorker(QObject):
             process.join(timeout=0.5)
 
         if self._cancelled:
-            self.failed.emit("Translation was cancelled.")
+            self.failed.emit(t("log.translation_cancelled"))
         elif terminal_event is not None:
             if terminal_event[0] == "finished":
                 self.finished.emit(terminal_event[1])

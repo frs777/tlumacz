@@ -16,7 +16,8 @@ Language = Literal["pl", "en"]
 PL = {
     # Nazwy zakładek
     "tab.translation": "Tłumaczenie",
-    "tab.settings": "Ustawienia",
+    "tab.api_server": "API i serwer",
+    "tab.extras": "Dodatki",
     "tab.help": "Pomoc",
 
     # Grupy plików
@@ -127,7 +128,8 @@ PL = {
 EN = {
     # Tab names
     "tab.translation": "Translation",
-    "tab.settings": "Settings",
+    "tab.api_server": "API & Server",
+    "tab.extras": "Extras",
     "tab.help": "Help",
 
     # File groups
