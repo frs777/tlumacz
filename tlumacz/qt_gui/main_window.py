@@ -556,6 +556,16 @@ class MainWindow(QMainWindow):
             item = self.other_form.itemAt(row_idx, QFormLayout.ItemRole.LabelRole)
             if item and item.widget():
                 item.widget().setText(t(key))
+        # Etykiety server - iteruj po wierszach QFormLayout
+        server_keys = [
+            "settings.port", "settings.compute_mode",
+            "settings.gguf_path", "settings.chat_template",
+            "settings.parallel",
+        ]
+        for row_idx, key in enumerate(server_keys):
+            item = self.server_form.itemAt(row_idx, QFormLayout.ItemRole.LabelRole)
+            if item and item.widget():
+                item.widget().setText(t(key))
         # Serwer
         self.restart_server_btn.setText(t("button.restart_server"))
         self.gguf_browse.setText(t("button.browse"))
@@ -943,7 +953,8 @@ OCR is not supported (text PDFs only).</p>
 
     def _build_server_group(self) -> QGroupBox:
         self.server_group = QGroupBox(t("settings.server_group"))
-        form = QFormLayout(self.server_group)
+        self.server_form = QFormLayout(self.server_group)
+        self._server_label_keys: dict[int, str] = {}
 
         self.server_port = QSpinBox()
         self.server_port.setObjectName("serverPort")
@@ -1020,13 +1031,19 @@ OCR is not supported (text PDFs only).</p>
             "Dla parallel > 1 zwiększ ctx-size serwera (np. 16384)."
         )
 
-        form.addRow(t("settings.port"), self.server_port)
-        form.addRow(t("settings.compute_mode"), self.server_compute_mode)
-        form.addRow(t("settings.gguf_path"), gguf_row)
-        form.addRow(t("settings.chat_template"), self.server_chat_template)
-        form.addRow(t("settings.parallel"), self.server_parallel)
-        form.addRow(self.auto_start_server)
-        form.addRow(self.cache_clear_after_translation)
+        row = 0
+        self.server_form.addRow(t("settings.port"), self.server_port)
+        self._server_label_keys[row] = "settings.port"; row += 1
+        self.server_form.addRow(t("settings.compute_mode"), self.server_compute_mode)
+        self._server_label_keys[row] = "settings.compute_mode"; row += 1
+        self.server_form.addRow(t("settings.gguf_path"), gguf_row)
+        self._server_label_keys[row] = "settings.gguf_path"; row += 1
+        self.server_form.addRow(t("settings.chat_template"), self.server_chat_template)
+        self._server_label_keys[row] = "settings.chat_template"; row += 1
+        self.server_form.addRow(t("settings.parallel"), self.server_parallel)
+        self._server_label_keys[row] = "settings.parallel"; row += 1
+        self.server_form.addRow(self.auto_start_server)
+        self.server_form.addRow(self.cache_clear_after_translation)
 
         self.restart_server_btn = QPushButton(t("button.restart_server"))
         self.restart_server_btn.setObjectName("restartServerBtn")
