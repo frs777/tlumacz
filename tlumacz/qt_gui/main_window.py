@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
             "Nagłówek oraz prefiks # w tłumaczeniu są obsługiwane automatycznie."
         )
         self.glossary_path.editingFinished.connect(self._on_glossary_path_edited)
-        glossary_browse = QPushButton("Przeglądaj...")
+        glossary_browse = QPushButton(t("button.browse"))
         glossary_browse.clicked.connect(self._on_browse_glossary)
         file_row.addWidget(self.glossary_path, 1)
         file_row.addWidget(glossary_browse)
@@ -353,7 +353,7 @@ class MainWindow(QMainWindow):
         self.glossary_target = QLineEdit()
         self.glossary_target.setObjectName("glossaryTarget")
         self.glossary_target.setPlaceholderText("Tłumaczenie")
-        add_entry = QPushButton("Dodaj wpis")
+        add_entry = QPushButton(t("button.add_entry"))
         add_entry.setObjectName("addGlossaryBtn")
         add_entry.clicked.connect(self._on_add_glossary_entry)
         entry_row.addWidget(self.glossary_term, 1)
@@ -376,13 +376,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._skill_row)
 
         button_row = QHBoxLayout()
-        refresh_btn = QPushButton("Odśwież")
+        refresh_btn = QPushButton(t("button.refresh"))
         refresh_btn.setObjectName("refreshSkillsBtn")
         refresh_btn.clicked.connect(self._on_refresh_skills)
-        import_btn = QPushButton("Importuj skilla...")
+        import_btn = QPushButton(t("button.import_skill"))
         import_btn.setObjectName("importSkillBtn")
         import_btn.clicked.connect(self._on_import_skill)
-        new_btn = QPushButton("Nowy skilla...")
+        new_btn = QPushButton(t("button.new_skill"))
         new_btn.setObjectName("newSkillBtn")
         new_btn.clicked.connect(self._on_new_skill)
         button_row.addWidget(refresh_btn)
@@ -950,13 +950,13 @@ OCR is not supported (text PDFs only).</p>
             "Ścieżka do pliku modelu .gguf uruchamianego samodzielnie.\n"
             "Puste = korzystasz z własnego serwera (Base URL)."
         )
-        gguf_browse = QPushButton("Przeglądaj...")
+        gguf_browse = QPushButton(t("button.browse"))
         gguf_browse.clicked.connect(self._on_browse_gguf)
         gguf_row.addWidget(self.server_gguf_path, 1)
         gguf_row.addWidget(gguf_browse)
 
         self.auto_start_server = QCheckBox(
-            "Uruchamiaj serwer razem z programem"
+            t("settings.auto_start")
         )
         self.auto_start_server.setObjectName("autoStartServer")
         self.auto_start_server.setToolTip(
@@ -965,7 +965,7 @@ OCR is not supported (text PDFs only).</p>
         )
 
         self.cache_clear_after_translation = QCheckBox(
-            "Czyść cache po każdym tłumaczeniu"
+            t("settings.clear_cache")
         )
         self.cache_clear_after_translation.setObjectName("cacheClearAfterTranslation")
         self.cache_clear_after_translation.setToolTip(
@@ -986,8 +986,8 @@ OCR is not supported (text PDFs only).</p>
 
         self.server_chat_template = QComboBox()
         self.server_chat_template.setObjectName("serverChatTemplate")
-        self.server_chat_template.addItem("Auto (jinja)", "")
-        self.server_chat_template.addItem("chatml (modele transl. gemma)", "chatml")
+        self.server_chat_template.addItem(t("settings.chat_auto"), "")
+        self.server_chat_template.addItem(t("settings.chat_chatml"), "chatml")
         self.server_chat_template.setToolTip(
             "Szablon czatu używany przy starcie serwera.\n"
             "Auto (jinja) = natywny szablon modelu — zwykle działa.\n"
@@ -1005,11 +1005,11 @@ OCR is not supported (text PDFs only).</p>
             "Dla parallel > 1 zwiększ ctx-size serwera (np. 16384)."
         )
 
-        form.addRow("Port:", self.server_port)
-        form.addRow("Obliczenia serwera:", self.server_compute_mode)
-        form.addRow("Plik modelu (GGUF):", gguf_row)
-        form.addRow("Szablon czatu:", self.server_chat_template)
-        form.addRow("Wątki (parallel):", self.server_parallel)
+        form.addRow(t("settings.port"), self.server_port)
+        form.addRow(t("settings.compute_mode"), self.server_compute_mode)
+        form.addRow(t("settings.gguf_path"), gguf_row)
+        form.addRow(t("settings.chat_template"), self.server_chat_template)
+        form.addRow(t("settings.parallel"), self.server_parallel)
         form.addRow(self.auto_start_server)
         form.addRow(self.cache_clear_after_translation)
 
