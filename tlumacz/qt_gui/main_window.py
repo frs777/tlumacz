@@ -522,20 +522,22 @@ class MainWindow(QMainWindow):
         self.glossary_group.setTitle(t("settings.glossary_group"))
         self.skills_group.setTitle(t("settings.skills_group"))
         self.other_group.setTitle(t("settings.other_group"))
-        # Etykiety ustawień - API
-        for row_idx in range(self.api_form.rowCount()):
-            label_item = self.api_form.labelForField(row_idx)
-            if label_item:
-                key = self._api_label_keys.get(row_idx)
-                if key:
-                    label_item.setText(t(key))
-        # Etykiety ustawień - pozostałe
-        for row_idx in range(self.other_form.rowCount()):
-            label_item = self.other_form.labelForField(row_idx)
-            if label_item:
-                key = self._other_label_keys.get(row_idx)
-                if key:
-                    label_item.setText(t(key))
+        # Etykiety API - iteruj po wierszach QFormLayout
+        api_keys = ["settings.base_url", "settings.api_key", "settings.model"]
+        for row_idx, key in enumerate(api_keys):
+            item = self.api_form.itemAt(row_idx, QFormLayout.ItemRole.LabelRole)
+            if item and item.widget():
+                item.widget().setText(t(key))
+        # Etykiety pozostałe - iteruj po wierszach QFormLayout
+        other_keys = [
+            "settings.block_size", "settings.temperature",
+            "settings.target_language", "settings.theme",
+            "settings.custom_prompt", "settings.skip_patterns",
+        ]
+        for row_idx, key in enumerate(other_keys):
+            item = self.other_form.itemAt(row_idx, QFormLayout.ItemRole.LabelRole)
+            if item and item.widget():
+                item.widget().setText(t(key))
         # Serwer
         self.restart_server_btn.setText(t("button.restart_server"))
 
