@@ -42,10 +42,43 @@ from .i18n import t
 
 MAX_NODES_PER_SEGMENT = 25
 
-# Threshold above which a chunk is considered "slow" for diagnostic purposes
-# (see _log_chunk_timing). Chosen well below the 300s client timeout so a
-# stuck chunk is flagged long before it would otherwise time out.
+# Próg powyżej którego chunk jest uznawany za "wolny" do celów diagnostycznych
+# (zobacz _log_chunk_timing). Wybrany znacznie poniżej 300s timeoutu klienta,
+# aby zablokowany chunk był oznaczony długo przed potencjalnym timeoutem.
 _SLOW_CHUNK_SECONDS = 30.0
+
+# Znane lokalizacje czcionek Unicode dla PDF (różne dystrybucje)
+# Kolejność: najpierw systemowe, potem użytkownika, potem platformowe
+_UNICODE_FONT_PATHS = [
+    # Arch Linux
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    # Debian/Ubuntu
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    # Fedora
+    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+    # Inne dystrybucje Linux
+    "/usr/share/fonts/TTF/NotoSans-Regular.ttf",
+    "/usr/share/fonts/noto-sans/NotoSans-Regular.ttf",
+    # Katalog użytkownika
+    str(Path.home() / ".local" / "share" / "fonts" / "NotoSans-Regular.ttf"),
+    # macOS
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    # Windows
+    "C:\\Windows\\Fonts\\arial.ttf",
+]
+
+
+def _find_unicode_font() -> Optional[str]:
+    """Znajdź ścieżkę do czcionki z obsługą Unicode.
+
+    Sprawdza znane lokalizacje czcionek w różnych dystrybucjach.
+    Zwraca pierwszą znalezioną lub None jeśli żadna nie istnieje.
+    """
+    for path in _UNICODE_FONT_PATHS:
+        if Path(path).is_file():
+            return path
+    return None
 
 
 def _log_chunk_timing(chunk: str, max_tokens: int, elapsed: float) -> None:
@@ -90,6 +123,7 @@ class TranslatorConfig:
     system_prompt: Optional[str] = None
     glossary_path: Optional[str] = None
     enabled_skills: list[str] = field(default_factory=list)
+    chat_template: str = ""  # "", "chatml"
     chat_template_kwargs: Optional[dict] = None
     parallel: int = 2
     skip_line_patterns: list[str] = field(
@@ -182,7 +216,7 @@ class Translator:
         self._cache = TranslationCache(enabled=config.cache_enabled)
 
     def cancel(self) -> None:
-        """Interrupt active HTTP requests and prevent new translation work."""
+        """Przerwij aktywne żądania HTTP i zablokuj nową pracę tłumaczenia."""
         self._cancel_event.set()
         with self._client_lock:
             clients = list(self._active_clients)
@@ -191,6 +225,13 @@ class Translator:
                 client.close()
             except Exception:
                 pass
+
+    def close(self) -> None:
+        """Zamknij cache tłumaczeń i zwolnij zasoby.
+
+        Wywoływane na końcu tłumaczenia aby uniknąć wycieków połączeń SQLite.
+        """
+        self._cache.close()
 
     def _split_into_chunks(self, text: str) -> list[str]:
         """Split text into chunks without breaking lines when possible.
@@ -235,16 +276,7 @@ class Translator:
         system = self.config.system_prompt
         if skill_text:
             system = system.rstrip() + "\n\n" + skill_text
-        # Glossary is appended if available
-        if self.config.glossary_path and os.path.exists(self.config.glossary_path):
-            try:
-                glossary = Glossary.load(self.config.glossary_path)
-            except Exception:
-                glossary = None
-            if glossary:
-                glossary_text = glossary.prompt_snippet()
-                if glossary_text:
-                    system = system.rstrip() + "\n\n" + glossary_text
+        # Glossary is appended per-chunk (filtered to terms in the chunk)
         return system
 
     def _translate_chunk(self, chunk: str, system_prompt: str) -> str:
@@ -269,22 +301,28 @@ class Translator:
         # and placeholder preservation in HTML/EPUB.
         chunk_ratio = len(chunk) / max(1, self.config.chunk_size)
         max_tokens = max(256, int(3072 * chunk_ratio))
+        
+        # Standard prompt for all templates
+        user_content = (
+            f"Translate ALL passages of the following text that "
+            f"are not already in {self.config.target_language} into "
+            f"{self.config.target_language}, preserving Markdown "
+            "formatting. Do not leave any passage in another "
+            "language - every foreign-language sentence must be "
+            "translated:\n\n"
+            f"{chunk}"
+        )
+
+        # Dodaj przefiltrowany glosariusz (tylko terminy występujące w tym fragmencie)
+        glossary_text = self.config._glossary_prompt_for(chunk)
+        if glossary_text:
+            system_prompt = system_prompt.rstrip() + "\n\n" + glossary_text
+
         request_kwargs: dict = {
             "model": self.config.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Translate ALL passages of the following text that "
-                        f"are not already in {self.config.target_language} into "
-                        f"{self.config.target_language}, preserving Markdown "
-                        "formatting. Do not leave any passage in another "
-                        "language - every foreign-language sentence must be "
-                        "translated:\n\n"
-                        f"{chunk}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
             "temperature": self.config.temperature,
             "max_tokens": max_tokens,
@@ -499,8 +537,11 @@ class Translator:
         if self.config.cache_clear_after_translation:
             self._cache.clear()
             log(t("log.buffer_cleared"))
-        
+
         self._cache.reset_stats()
+
+        # Zamknij cache aby zwolnić połączenie SQLite
+        self.close()
 
     def _translate_epub_xhtml(
         self,
@@ -533,13 +574,13 @@ class Translator:
         xhtml_paths = structure["xhtml_paths"]
         _log(t("log.found_xhtml_files", count=len(xhtml_paths)))
 
-        skill_text, skill_name, _ = text_for_file(
-            input_path, self.config.enabled_skills
-        )
+        # Nie wstrzykuj skilli dla EPUB — kod tłumaczy XHTML in-place,
+        # model widzi tylko fragmenty tekstu z separatorami ⟦S_N⟧.
+        skill_text = ""
+        skill_name = ""
+
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
             _log(t("log.using_glossary", path=self.config.glossary_path))
-        if skill_name:
-            _log(t("log.using_skill", name=skill_name))
 
         # Build system prompt once for all XHTML files
         system_prompt = self._build_system_prompt(skill_text)
@@ -578,6 +619,9 @@ class Translator:
         if self.config.cache_clear_after_translation:
             self._cache.clear()
             _log(t("log.buffer_cleared_short"))
+
+        # Zamknij cache aby zwolnić połączenie SQLite
+        self.close()
 
         return output_path
 
@@ -619,13 +663,15 @@ class Translator:
         content_paths = structure["content_paths"]
         _log(t("log.found_content_files", count=len(content_paths)))
 
-        skill_text, skill_name, _ = text_for_file(
-            input_path, self.config.enabled_skills
-        )
+        # Nie wstrzykuj skilli dla DOCX/ODT — kod tłumaczy węzły XML in-place,
+        # model widzi tylko krótkie fragmenty tekstu z separatorami ⟦S_N⟧,
+        # nie widzi Markdown ani struktury dokumentu.
+        # Skille opisujące Markdown byłyby mylące dla modelu.
+        skill_text = ""
+        skill_name = ""
+
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
             _log(t("log.using_glossary", path=self.config.glossary_path))
-        if skill_name:
-            _log(t("log.using_skill", name=skill_name))
 
         # Build system prompt once for all XML files
         system_prompt = self._build_system_prompt(skill_text)
@@ -665,6 +711,9 @@ class Translator:
             self._cache.clear()
             _log(t("log.buffer_cleared_short"))
 
+        # Zamknij cache aby zwolnić połączenie SQLite
+        self.close()
+
         return output_path
 
     def _translate_pdf(
@@ -700,21 +749,31 @@ class Translator:
 
         _log(t("log.found_text_blocks", count=len(blocks)))
 
-        skill_text, skill_name, _ = text_for_file(
-            input_path, self.config.enabled_skills
-        )
+        # Nie wstrzykuj skilli dla PDF — kod tłumaczy bloki tekstu z PyMuPDF,
+        # model widzi surowy tekst z bloku, nie Markdown.
+        skill_text = ""
+        skill_name = ""
+
         if self.config.glossary_path and os.path.exists(self.config.glossary_path):
             _log(t("log.using_glossary", path=self.config.glossary_path))
-        if skill_name:
-            _log(t("log.using_skill", name=skill_name))
 
         system_prompt = self._build_system_prompt(skill_text)
 
         # Otwórz PDF do edycji
         doc = fitz.open(input_path)
 
+        # Znajdź czcionkę z obsługą Unicode (polskie znaki)
+        font_path = _find_unicode_font()
+        font_name = "NotoSans"
+        if font_path is None:
+            _log("Uwaga: nie znaleziono czcionki Unicode. Polskie znaki mogą nie być wyświetlane poprawnie.")
+            font_name = "helv"  # wbudowana czcionka PyMuPDF (bez polskiego ogona)
+
         # Tłumacz każdy blok i wstawiaj z powrotem do PDF
         total_blocks = len(blocks)
+        # Śledź strony które już mają dodaną czcionkę (unikaj wielokrotnego dodawania)
+        pages_with_font: set[int] = set()
+
         for idx, block in enumerate(blocks):
             if is_cancelled is not None and is_cancelled():
                 _log(t("log.translation_cancelled"))
@@ -733,7 +792,12 @@ class Translator:
             # Prostokąt bloku
             rect = fitz.Rect(block.x0, block.y0, block.x1, block.y1)
 
-            # Usuń oryginalny tekst (redact)
+            # Usuń oryginalny tekst (redact).
+            # Uwaga: apply_redactions() usuwa WSZYSTKO w prostokącie — tekst,
+            # obrazki, inne elementy. W typowym PDF bloki się nie pokrywają,
+            # ale w specyficznych przypadkach (tekst w tabelach, obrazki w zasięgu
+            # prostokąta) może to usunąć treść która nie powinna być usunięta.
+            # To jest znane ograniczenie PyMuPDF dla tłumaczenia PDF.
             page.add_redact_annot(rect)
             page.apply_redactions()
 
@@ -741,12 +805,14 @@ class Translator:
             # Użyj rozmiaru czcionki z pierwszego spana
             font_size = block.spans[0].font_size if block.spans else 11.0
 
-            # Ścieżka do czcionki TrueType z obsługą Unicode (polskie znaki)
-            font_path = "/usr/share/fonts/noto/NotoSans-Regular.ttf"
-            font_name = "NotoSans"
-
-            # Dodaj czcionkę do strony (wymagane dla Unicode)
-            page.insert_font(fontname=font_name, fontfile=font_path)
+            # Dodaj czcionkę do strony tylko raz (nie dla każdego bloku)
+            if block.page_num not in pages_with_font:
+                if font_path:
+                    page.insert_font(fontname=font_name, fontfile=font_path)
+                else:
+                    # Użyj wbudowanej czcionki PyMuPDF
+                    page.insert_font(fontname=font_name)
+                pages_with_font.add(block.page_num)
 
             # Spróbuj wstawić tekst z oryginalnym rozmiarem czcionki
             rc = page.insert_textbox(
@@ -812,6 +878,9 @@ class Translator:
             self._cache.clear()
             _log(t("log.buffer_cleared_short"))
 
+        # Zamknij cache aby zwolnić połączenie SQLite
+        self.close()
+
         return output_path
 
     def _translate_document_xml(
@@ -843,10 +912,12 @@ class Translator:
             root = ET.fromstring(raw_xml)
         except ET.ParseError:
             # Not well-formed XML; fall back to the generic text pipeline.
+            # Przekaż system_prompt aby zachować skill i glosariusz.
             return self._translate_text(
                 raw_xml, "", [],
                 log=log, progress_callback=progress_callback,
                 is_cancelled=is_cancelled,
+                system_prompt=system_prompt,
             )
 
         slots: list[tuple[object, str]] = []
@@ -874,6 +945,10 @@ class Translator:
             declaration = raw_xml[start : raw_xml.find("?>", start) + 2]
 
         # Keep the original namespace prefixes (w:, text:, office:, ...).
+        # Uwaga: ET.register_namespace jest globalne — wpływa na wszystkie
+        # operacje ElementTree w procesie. W praktyce nie powoduje to problemów
+        # bo aplikacja tłumaczy jeden plik na raz, a namespace'y pochodzą
+        # z tego samego dokumentu.
         orig_ns: list[tuple[str, str]] = [
             (m.group(1) or "", m.group(2))
             for m in re.finditer(r'xmlns(?::([a-zA-Z0-9_]+))?="([^"]+)"', raw_xml)
@@ -979,10 +1054,13 @@ class Translator:
         try:
             root = ET.fromstring(raw_xhtml)
         except ET.ParseError:
+            # Nieprawidłowy XHTML; fallback do ogólnego potoku tekstowego.
+            # Przekaż system_prompt aby zachować skill i glosariusz.
             return self._translate_text(
                 raw_xhtml, "", [],
                 log=log, progress_callback=progress_callback,
                 is_cancelled=is_cancelled,
+                system_prompt=system_prompt,
             )
 
         # Zbierz wszystkie sloty tekstowe (text i tail)
@@ -1007,6 +1085,9 @@ class Translator:
             start = raw_xhtml.find("<?xml")
             declaration = raw_xhtml[start : raw_xhtml.find("?>", start) + 2]
 
+        # Zachowaj oryginalne prefiksy namespace'ów.
+        # Uwaga: ET.register_namespace jest globalne — patrz komentarz
+        # w _translate_document_xml. W praktyce nie powoduje to problemów.
         orig_ns: list[tuple[str, str]] = [
             (m.group(1) or "", m.group(2))
             for m in re.finditer(r'xmlns(?::([a-zA-Z0-9_]+))?="([^"]+)"', raw_xhtml)
@@ -1091,8 +1172,15 @@ class Translator:
         log: Callable[[str], None],
         progress_callback: Optional[Callable[[int, int], None]] = None,
         is_cancelled: Optional[Callable[[], bool]] = None,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """Run the protect -> split -> translate -> restore pipeline over ``text``.
+
+        Args:
+            text: Tekst do przetłumaczenia.
+            skill_text: Tekst skilla (używany jeśli system_prompt nie jest podany).
+            skip_patterns: Wzorce linii do pominięcia.
+            system_prompt: Gotowy system prompt (nadpisuje skill_text jeśli podany).
 
         Returns the fully translated text as a single string.
         """
@@ -1110,8 +1198,11 @@ class Translator:
             )
         total = sum(1 for kind, _ in segments if kind == "translate")
 
-        # Build system prompt once for all chunks
-        system_prompt = self._build_system_prompt(skill_text)
+        # Użyj gotowego system_prompt jeśli podany, inaczej zbuduj z skill_text
+        if system_prompt is not None:
+            full_system_prompt = system_prompt
+        else:
+            full_system_prompt = self._build_system_prompt(skill_text)
 
         if protected:
             log(t("log.protected_fragments", count=len(protected)))
@@ -1129,8 +1220,8 @@ class Translator:
                 continue
 
             written += 1
-            log(f"Tłumaczenie bloku {written}/{total}...")
-            translated = self._translate_chunk(content, system_prompt)
+            log(t("log.translating_block", current=written, total=total))
+            translated = self._translate_chunk(content, full_system_prompt)
             parts.append(restore(translated, protected) + "\n\n")
 
             if progress_callback is not None:

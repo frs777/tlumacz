@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tlumacz"
-version = "0.20.1"
+version = "0.21.2"
 description = "AI-powered document translator with a Qt GUI"
 readme = "README.md"
 license = {text = "MIT"}

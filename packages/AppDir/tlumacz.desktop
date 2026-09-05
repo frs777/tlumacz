@@ -1,9 +1,11 @@
 [Desktop Entry]
-Name=Tlumacz
-Comment=AI-powered document translator
+Name=Tłumacz
+Comment=Narzędzie do tłumaczenia dokumentów za pomocą LLM z interfejsem Qt
+Comment[pl]=Narzędzie do tłumaczenia dokumentów za pomocą LLM z interfejsem Qt
+Comment[en]=AI-powered document translator with Qt GUI
 Exec=tlumacz
 Icon=tlumacz
 Type=Application
 Categories=Office;Utility;TextTools;
-Keywords=translate;translation;ai;polish;
+Keywords=translate;translation;ai;polish;llm;
 Terminal=false

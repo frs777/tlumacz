@@ -1,8 +1,11 @@
 Package: tlumacz
-Version: 0.20.1-2
+Version: 0.21.2-1
 Architecture: all
 Maintainer: frs <frs@users.noreply.github.com>
 Depends: python3, python3-pyside6, python3-openai, python3-pymupdf, hicolor-icon-theme
-Description: AI-powered document translator with a Qt GUI
- Tłumacz is a Qt/PySide6 application for translating documents using
- LLM models compatible with the OpenAI API.
+Recommends: pandoc, llama-server
+Description: Narzędzie do tłumaczenia dokumentów za pomocą LLM z interfejsem Qt
+ Tłumacz to aplikacja Qt/PySide6 do tłumaczenia dokumentów za pomocą
+ modeli LLM zgodnych z API OpenAI. Obsługuje formaty Markdown, TXT,
+ HTML, PDF, DOCX, ODT i EPUB z zachowaniem oryginalnego formatu.
+ Wspiera lokalne serwery (llama.cpp/GGUF) i chmurę (Gemini, OpenAI).

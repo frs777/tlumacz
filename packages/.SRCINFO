@@ -1,6 +1,6 @@
 pkgbase = tlumacz
-	pkgdesc = AI-powered document translator with a Qt GUI
-	pkgver = 0.21.0
+	pkgdesc = Narzędzie do tłumaczenia dokumentów (MD, TXT, HTML, PDF, DOCX, ODT, EPUB) za pomocą LLM z interfejsem Qt
+	pkgver = 0.21.2
 	pkgrel = 1
 	url = https://github.com/frs777/tlumacz
 	arch = any
@@ -12,8 +12,9 @@ pkgbase = tlumacz
 	depends = python-openai
 	depends = python-pymupdf
 	depends = hicolor-icon-theme
-	optdepends = pandoc: DOCX extraction (docx to Markdown)
-	source = tlumacz-0.21.0.tar.gz
-	b2sums = e936dfc9ac4b228a2894e7b50284fcebb1e9ac36c1b0c665c7a0ab072fdf17ca2b361cc52cd3d3f55fb45133d0b5285eef54422ae5e8f38a896e49e28954954f
+	optdepends = pandoc: ekstrakcja DOCX (docx do Markdown)
+	optdepends = llama-server: lokalny serwer LLM (GGUF)
+	source = tlumacz-0.21.2.tar.gz
+	b2sums = 2f5924ec631615f8e4312b522207145309ce1a1a6eab8b29d416b10bf45b3cda159c1cd7607762e5d37694f10a5e0f158145ada68f9e8e46076cfe02f0ae76e8
 
 pkgname = tlumacz

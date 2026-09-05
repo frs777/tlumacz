@@ -89,3 +89,8 @@ tlumacz.json
 # OS
 .DS_Store
 Thumbs.db
+packages/*.AppImage
+packages/*.deb
+packages/*.rpm
+packages/*.pkg.tar.zst
+packages/*.tar.gz

@@ -1,0 +1,84 @@
+   SEKCJON POLSKA
+Niniejszy dokument zawiera tekst w trzech różnych językach w celu przetestowania możliwości tłumaczeniowych systemu. Każda sekcja jest napisana w innym języku i powinna zostać przetłumaczona na język polski, zachowując strukturę dokumentu i formatowanie. Sekcja polska opisuje cel tego testu porównawczego. Chcemy zweryfikować, czy translator może poprawnie przetwarzać dokumenty wielojęzyczne. Szybki brązowy lis skacze nad leniwym psem w pobliżu brzegu rzeki, podczas gdy wschodzące słońce powoli wznosi się nad odległymi wzgórzami. Ta zdanie zawiera powszechne słowa, które powinny łatwo się tłumaczyć. Technologia i nauka nieustannie rozwijają się w szybkim tempie w nowoczesnym świecie.
+   SEKCJON FRANCUSKA
+Niniejszy dokument zawiera tekst w trzech różnych językach w celu przetestowania możliwości tłumaczeniowych systemu. Każda sekcja jest napisana w innym języku i powinna zostać przetłumaczona na język polski, zachowując strukturę dokumentu i formatowanie. Sekcja francuska opisuje cel tego testu porównawczego. Chcemy zweryfikować, czy translator może poprawnie przetwarzać dokumenty wielojęzyczne. Lis brązowy szybki przeskakuje nad leniwym psem w pobliżu rzeki, podczas gdy wschodzące słońce powoli wznosi się nad odległymi wzgórzami. To zdanie zawiera powszechne słowa, które powinny łatwo się tłumaczyć. Technologia i nauka nieustannie rozwijają się w szybkim tempie w nowoczesnym świecie.
+   SEKTION DEUTSCH
+Niniejszy dokument zawiera tekst w trzech różnych językach w celu przetestowania możliwości tłumaczeniowych systemu. Każda sekcja jest napisana w innym języku i powinna zostać przetłumaczona na język polski, zachowując strukturę dokumentu i formatowanie. Sekcja niemiecka opisuje cel tego testu porównawczego. Chcemy zweryfikować, czy translator może poprawnie przetwarzać dokumenty wielojęzyczne. Der schnelle braune Fuchs springt über den faulen Hund in der Nähe des Flussufers, während die Morgensonne langsam über die fernen Hügel aufsteigt. Dieses Satz enthält gängige Wörter, die leicht übersetzt werden sollten. Technologie und Wissenschaft entwickeln sich ständig im modernen Welt.
+
+
+Ten dokument zawiera tekst w trzech różnych językach, aby przetestować możliwości tłumaczenia systemu. Każdy rozdział jest napisany w innym języku i ma zostać przetłumaczony na język polski, zachowując strukturę dokumentu. Sekcja w języku niemieckim opisuje cel tego testu porównawczego. Chcemy sprawdzić, czy translator potrafi poprawnie przetłumaczyć wielojęzyczne dokumenty. Szybki, brązowy lis skacze nad leniwym psem w pobliżu brzegu rzeki, podczas gdy poranna słońce powoli wschodzi nad wzgórze. Ten zdanie zawiera częste słowa, które powinny być łatwe do przetłumaczenia. Technologia i nauka szybko rozwijają się w nowoczesnym świecie.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional translator. Translate ALL text into Polish. Do not skip, omit, summarize, or shorten any content. Every source sentence must have a corresponding translated sentence. Return ONLY the translation — no explanations, comments, or notes.
+
+Pay attention to grammar, especially inflection by person and grammatical gender.
+user>
+This is a test.
+assistant>
+To jest test.
+system>
+You are a professional
+

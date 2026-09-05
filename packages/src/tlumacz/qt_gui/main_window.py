@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import TranslatorConfig
-
+from ..extract import is_binary_format
 from ..glossary import Glossary
 from ..i18n import t, set_language, get_language, Language
 from ..preprocess import DEFAULT_SKIP_PATTERNS
@@ -66,12 +66,6 @@ from .config import (
 )
 from .theme import apply_theme
 from .worker import ServerManager, ServerState, TranslationThread
-
-try:  # optional; only used when the managed server is running
-    from ..server import LlamaServer, ServerConfig
-except ImportError:  # pragma: no cover
-    LlamaServer = None  # type: ignore[assignment,misc]
-    ServerConfig = None  # type: ignore[assignment,misc]
 
 SUPPORTED_LANGUAGES = [
     "Polski",
@@ -237,7 +231,7 @@ class MainWindow(QMainWindow):
 
         Zwraca None jeśli nie wskazano pliku GGUF (brak zarządzanego serwera).
         """
-        if ServerConfig is None or not self._settings.server_gguf_path:
+        if not self._settings.server_gguf_path:
             return None
         return ServerConfig(
             gguf_path=self._settings.server_gguf_path,
@@ -1153,8 +1147,7 @@ OCR is not supported (text PDFs only).</p>
         self.server_chat_template.setToolTip(
             "Szablon czatu używany przy starcie serwera.\n"
             "jinja = natywny szablon modelu — zwykle działa.\n"
-            "chatml = dla modeli, których szablon jinja jest nieprawidłowy.\n"
-            "translategemma = dla modelu TranslateGemma (kody języków)."
+            "chatml = dla modeli, których szablon jinja jest nieprawidłowy."
         )
 
         self.server_parallel = QSpinBox()
@@ -1198,14 +1191,17 @@ OCR is not supported (text PDFs only).</p>
 
     def _build_config(self) -> TranslatorConfig:
         model = self.model.currentText().strip()
-        # Gdy serwer zarządzany, wymuś "local"
-        if self._server is not None:
+        # Gdy serwer zarządzany jest uruchomiony i model to "LOCAL" lub pusty,
+        # użyj aliasu "local" — serwer obsługuje tylko model z GGUF.
+        # Jeśli użytkownik wybrał model chmurowy, użyj go (edge case).
+        if self._server is not None and (not model or model == "LOCAL"):
             model = SERVER_MODEL_ALIAS
 
         return TranslatorConfig(
             base_url=self.base_url.text().strip(),
             api_key=self.api_key.text().strip(),
             model=model,
+            chat_template=self.server_chat_template.currentData() or "",
             chat_template_kwargs=(
                 {"enable_thinking": False}
                 if self._server is not None
@@ -1288,6 +1284,9 @@ OCR is not supported (text PDFs only).</p>
             self.base_url.setText(self._settings.last_local_base_url)
             self.api_key.setText(self._settings.last_local_api_key)
         # else: puste pole lub własny model — nie zmieniaj base_url/api_key
+
+        # Aktualizuj _settings.model dla spójności z GUI
+        self._settings.model = model_name
 
     def _load_settings_into_ui(self) -> None:
         s = self._settings
@@ -1462,6 +1461,12 @@ OCR is not supported (text PDFs only).</p>
             self._on_glossary_path_edited()
 
     def _on_glossary_path_edited(self) -> None:
+        """Odśwież liczbę wpisów glosariusza i zapisz ustawienia.
+
+        Uwaga: _refresh_glossary_count czyta do _GLOSSARY_COUNT_SCAN (50k) wpisów.
+        Dla bardzo dużych plików może to być wolne, ale editingFinished jest
+        wywoływane tylko przy utracie fokusu, więc nie jest to częste.
+        """
         save_settings(self._collect_settings())
         self._refresh_glossary_count()
 
@@ -1607,6 +1612,19 @@ OCR is not supported (text PDFs only).</p>
         if self._server_manager.server is None:
             logger.info("_on_restart_server(): creating server from settings")
             settings = self._collect_settings()
+
+            # Walidacja ścieżki GGUF — bez niej serwer nie może się uruchomić
+            if not settings.server_gguf_path:
+                QMessageBox.warning(
+                    self,
+                    "Brak pliku modelu",
+                    "Nie wskazano pliku modelu GGUF.\n\n"
+                    'W polu „Plik modelu (GGUF)" wskaż ścieżkę do pliku .gguf '
+                    'lub użyj własnego serwera (odznacz „Uruchamiaj serwer '
+                    'razem z programem").',
+                )
+                return
+
             server = LlamaServer(
                 ServerConfig(
                     port=settings.server_port,
@@ -1826,17 +1844,33 @@ OCR is not supported (text PDFs only).</p>
         QMessageBox.critical(self, "Błąd tłumaczenia", message)
 
     def _clear_finished_thread(self) -> None:
-        """Zatrzymaj i wyczyść thread po zakończeniu tłumaczenia."""
-        thread = self._thread
-        if thread is not None:
-            # Zatrzymaj thread (cancel + quit + wait)
-            thread.stop()
-            self._thread = None
+        """Wyczyść referencję do threadu po zakończeniu tłumaczenia.
+
+        Thread już się zakończył (finished/failed signal), więc nie trzeba
+        wywoływać stop() — wystarczy ustawić referencję na None.
+        """
+        self._thread = None
 
     def _show_preview(self, output_path: str) -> None:
+        """Wyświetl podgląd przetłumaczonego pliku.
+
+        Dla plików tekstowych (MD, TXT, HTML) wyświetla zawartość.
+        Dla plików binarnych (DOCX, ODT, EPUB, PDF) wyświetla komunikat.
+        """
+        if is_binary_format(output_path):
+            ext = Path(output_path).suffix.upper().lstrip(".")
+            self.preview_view.setPlainText(
+                f"Podgląd niedostępny dla plików {ext}.\n\n"
+                f"Plik został zapisany w:\n{output_path}"
+            )
+            return
         try:
             with open(output_path, "r", encoding="utf-8") as f:
                 self.preview_view.setPlainText(f.read())
+        except UnicodeDecodeError:
+            self.preview_view.setPlainText(
+                "Nie można wyświetlić podglądu — plik zawiera dane binarne."
+            )
         except OSError as exc:
             self._append_log(f"Nie można wczytać podglądu: {exc}")
 

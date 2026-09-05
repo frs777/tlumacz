@@ -356,17 +356,19 @@ def reconstruct_zip(
 ) -> None:
     """Rebuild a ZIP-based document (DOCX/ODT) from raw files plus updates.
 
+    Zachowuje oryginalną kolejność plików z archiwum — ważne dla DOCX/ODT
+    które wymagają specyficznej kolejności (np. [Content_Types].xml na początku).
+
     Args:
         files: rel_path -> bytes, as returned by :func:`extract_office_structure`.
         updates: rel_path -> bytes to overwrite in ``files`` (translated XML).
         output_path: destination document path.
     """
-    merged = dict(files)
-    merged.update(updates)
-
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
-        for name, data in merged.items():
+        # Iteruj po oryginalnej kolejności plików z archiwum
+        for name in files:
+            data = updates.get(name, files[name])
             zout.writestr(name, data)

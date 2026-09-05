@@ -1,3 +1,19 @@
+tlumacz (0.21.2-1) unstable; urgency=medium
+
+  * Full audit and bugfix release
+  * Fixed _glossary_prompt_for AttributeError (critical)
+  * Fixed _show_preview crash for binary formats
+  * Fixed hardcoded PDF font path (cross-platform)
+  * Fixed skill incompatibility for DOCX/ODT/EPUB/PDF
+  * Fixed TranslationCache SQLite connection leak
+  * Fixed fallback not passing skill_text
+  * Added translategemma chat template to GUI
+  * Merged _kill_by_port/_kill_port_occupier into one method
+  * Added cloud_models.json structure validation
+  * 102/102 tests passing
+
+ -- frs <frs@users.noreply.github.com>  Fri, 05 Sep 2026 18:15:00 +0200
+
 tlumacz (0.21.0-1) unstable; urgency=medium
 
   * Added ServerManager architecture with state machine

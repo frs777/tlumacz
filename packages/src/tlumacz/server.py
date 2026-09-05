@@ -180,9 +180,6 @@ class LlamaServer:
         but the prompt includes language codes (en, pl, de, etc.).
         """
         primary = self.config.chat_template or None
-        # "translategemma" uses native jinja (Gemma 3 template)
-        if primary == "translategemma":
-            primary = None
         attempts = [primary]
         for candidate in ("chatml", None):
             if candidate != primary and candidate not in attempts:
@@ -231,7 +228,7 @@ class LlamaServer:
             # Sprawdź czy serwer HTTP nadal odpowiada (proces z poprzedniej sesji)
             if self.is_running():
                 logger.info("stop(): _process is None but server is running, killing by port")
-                self._kill_by_port()
+                self._kill_port_occupier()
             else:
                 logger.debug("stop(): _process is None and server not running, nothing to do")
             return
@@ -254,21 +251,24 @@ class LlamaServer:
         # Sprawdź czy serwer HTTP nadal odpowiada (osierocony proces z innej sesji)
         if self.is_running():
             logger.info("stop(): server still running after process exit, killing by port")
-            self._kill_by_port()
+            self._kill_port_occupier()
         logger.info("stop(): completed, _process set to None")
 
-    def _kill_by_port(self) -> None:
-        """Kill process listening on the server port (fallback for orphaned servers)."""
+    def _kill_port_occupier(self) -> None:
+        """Zabij proces zajmujący port serwera.
+
+        Używa ss (z fallbackiem na lsof) do znalezienia PID, a następnie
+        SIGTERM z eskalacją do SIGKILL po 10s. Pomija nasz własny proces.
+        """
         port = self.config.port
         try:
-            # Użyj ss lub lsof do znalezienia PID
+            # Znajdź PID na porcie
             pid = None
             if shutil.which("ss"):
                 result = subprocess.run(
                     ["ss", "-tlnp", f"sport = :{port}"],
                     capture_output=True, text=True, timeout=5
                 )
-                # ss output: "LISTEN 0 512 127.0.0.1:17580 0.0.0.0:* users:(("llama-server",pid=4416,fd=3))"
                 for line in result.stdout.splitlines():
                     if "pid=" in line:
                         match = re.search(r"pid=(\d+)", line)
@@ -283,30 +283,36 @@ class LlamaServer:
                 if result.stdout.strip():
                     pid = int(result.stdout.strip().split()[0])
 
-            if pid:
-                logger.info(f"_kill_by_port(): killing PID={pid}")
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    # Poczekaj aż proces się zakończy
-                    for _ in range(10):
-                        time.sleep(1)
-                        try:
-                            os.kill(pid, 0)  # Sprawdź czy proces nadal istnieje
-                        except OSError:
-                            logger.info(f"_kill_by_port(): process {pid} terminated")
-                            return
-                    # Jeśli nadal działa, zabij
-                    logger.warning(f"_kill_by_port(): process {pid} did not terminate, killing")
-                    os.kill(pid, signal.SIGKILL)
-                except OSError as e:
-                    logger.error(f"_kill_by_port(): OSError: {e}")
-            else:
-                logger.warning(f"_kill_by_port(): no process found on port {port}")
+            if not pid:
+                logger.warning(f"_kill_port_occupier(): brak procesu na porcie {port}")
+                return
+
+            # Nie zabijaj naszego własnego procesu
+            if self._process is not None and pid == self._process.pid:
+                logger.debug(f"_kill_port_occupier(): pomijam własny proces PID={pid}")
+                return
+
+            logger.info(f"_kill_port_occupier(): zabijam PID={pid}")
+            try:
+                os.kill(pid, signal.SIGTERM)
+                # Czekaj aż proces się zakończy (do 10s)
+                for _ in range(10):
+                    time.sleep(1)
+                    try:
+                        os.kill(pid, 0)  # Sprawdź czy proces nadal istnieje
+                    except OSError:
+                        logger.info(f"_kill_port_occupier(): proces {pid} zakończony")
+                        return
+                # Jeśli nadal działa, zabij
+                logger.warning(f"_kill_port_occupier(): proces {pid} nie zakończył się, zabijam")
+                os.kill(pid, signal.SIGKILL)
+            except OSError as e:
+                logger.error(f"_kill_port_occupier(): OSError: {e}")
         except Exception as e:
-            logger.error(f"_kill_by_port(): failed: {type(e).__name__}: {e}")
+            logger.error(f"_kill_port_occupier(): niepowodzenie: {type(e).__name__}: {e}")
 
     def _is_port_busy(self) -> bool:
-        """Sprawdź czy port jest zajęty przez proces llama-server."""
+        """Sprawdź czy port jest zajęty przez dowolny proces."""
         port = self.config.port
         try:
             if not shutil.which("ss"):
@@ -315,43 +321,11 @@ class LlamaServer:
                 ["ss", "-tlnp", f"sport = :{port}"],
                 capture_output=True, text=True, timeout=5
             )
-            # Sprawdź czy jest proces na tym porcie
+            # Sprawdź czy jest jakikolwiek proces na tym porcie
             for line in result.stdout.splitlines():
-                if "pid=" in line and "llama-server" in line:
+                if "pid=" in line:
                     return True
             return False
         except Exception as e:
-            logger.error(f"_is_port_busy(): failed: {type(e).__name__}: {e}")
+            logger.error(f"_is_port_busy(): niepowodzenie: {type(e).__name__}: {e}")
             return False
-
-    def _kill_port_occupier(self) -> None:
-        """Zabij proces zajmujący port (osierocony llama-server)."""
-        port = self.config.port
-        try:
-            if not shutil.which("ss"):
-                return
-            result = subprocess.run(
-                ["ss", "-tlnp", f"sport = :{port}"],
-                capture_output=True, text=True, timeout=5
-            )
-            for line in result.stdout.splitlines():
-                if "pid=" in line:
-                    match = re.search(r"pid=(\d+)", line)
-                    if match:
-                        pid = int(match.group(1))
-                        # Nie zabijaj naszego procesu
-                        if self._process is not None and pid == self._process.pid:
-                            continue
-                        logger.info(f"_kill_port_occupier(): killing PID={pid}")
-                        try:
-                            os.kill(pid, signal.SIGTERM)
-                            time.sleep(1)
-                            try:
-                                os.kill(pid, 0)  # Sprawdź czy nadal istnieje
-                                os.kill(pid, signal.SIGKILL)
-                            except OSError:
-                                pass  # Proces się zakończył
-                        except OSError as e:
-                            logger.error(f"_kill_port_occupier(): OSError: {e}")
-        except Exception as e:
-            logger.error(f"_kill_port_occupier(): failed: {type(e).__name__}: {e}")

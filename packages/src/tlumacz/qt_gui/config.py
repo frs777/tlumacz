@@ -39,18 +39,30 @@ def config_dir() -> Path:
 
 
 def _load_cloud_models_config() -> list[dict[str, str]]:
-    """Load cloud models configuration from cloud_models.json.
+    """Załaduj konfigurację modeli chmurowych z cloud_models.json.
 
-    Returns list of cloud model definitions with name, base_url, api_key, description.
-    Falls back to empty list if file is missing or invalid.
+    Zwraca listę definicji modeli z polami name, base_url, api_key, description.
+    Waliduje strukturę — pomija wpisy bez wymaganych pól (name, base_url).
+    Zwraca pustą listę jeśli plik jest uszkodzony lub brak.
     """
+    def _validate_models(data: dict) -> list[dict[str, str]]:
+        """Waliduj listę modeli — tylko wpisy z name i base_url."""
+        models = data.get("cloud_models", [])
+        if not isinstance(models, list):
+            return []
+        valid = []
+        for m in models:
+            if isinstance(m, dict) and m.get("name") and m.get("base_url"):
+                valid.append(m)
+        return valid
+
     # Najpierw sprawdź w katalogu projektu (dla dewelopera)
     project_config = Path(__file__).parent.parent.parent / "cloud_models.json"
     if project_config.is_file():
         try:
             with open(project_config, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return data.get("cloud_models", [])
+            return _validate_models(data)
         except (OSError, ValueError):
             pass
 
@@ -60,7 +72,7 @@ def _load_cloud_models_config() -> list[dict[str, str]]:
         try:
             with open(user_config, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return data.get("cloud_models", [])
+            return _validate_models(data)
         except (OSError, ValueError):
             pass
 
