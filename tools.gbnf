@@ -1,3 +1,0 @@
-root ::= "{" space "\"name\":" space "\"file_reader\"" "," space "\"arguments\":" space "{" space "\"path\":" space string "}" space "}"
-string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\""
-space ::= [ \t\n]*

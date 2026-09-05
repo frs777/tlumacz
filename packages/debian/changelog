@@ -1,0 +1,26 @@
+tlumacz (0.21.0-1) unstable; urgency=medium
+
+  * Added ServerManager architecture with state machine
+  * Added cloud translation support (Gemini models)
+  * Added smart restart button (4 states)
+  * Added TranslateGemma chat template support
+  * Changed language format to "wykryj do X"
+  * Fixed crash on translation cancel
+  * Fixed race conditions in ServerManager
+
+ -- frs <frs@users.noreply.github.com>  Fri, 05 Sep 2026 03:20:00 +0200
+
+tlumacz (0.20.1-2) unstable; urgency=medium
+
+  * Added PyMuPDF dependency for PDF translation
+  * Fixed ODT/EPUB/HTML translation bugs
+  * Added i18n support (PL/EN)
+  * Split settings into 2 tabs
+
+ -- frs <frs@users.noreply.github.com>  Thu, 03 Sep 2026 17:30:00 +0200
+
+tlumacz (0.20.1-1) unstable; urgency=medium
+
+  * Initial Debian package
+
+ -- frs <frs@users.noreply.github.com>  Thu, 03 Sep 2026 17:00:00 +0200
