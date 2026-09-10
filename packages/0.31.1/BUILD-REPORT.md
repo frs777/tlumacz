@@ -9,6 +9,17 @@ Architektura hosta: x86_64
 - `tlumacz_0.31.1-1_all.deb` — Debian package, zbudowany ręcznie na hoście Arch (dpkg-buildpackage nie jest zainstalowany)
 - `tlumacz-0.31.1-1.noarch.rpm` — RPM + SRPM, lokalna budowa rpmbuild bez rozwiązywania BuildRequires przez RPM DB
 - `tlumacz-0.31.1-x86_64-linuxdeploy.AppImage` — AppImage type 2 zbudowany przez linuxdeploy + appimagetool; używa systemowego Python 3.14 i zależności hosta
+- `Tlumacz-0.31.1-windows-x86_64.exe` — Windows x64, zbudowany natywnie na `windows-latest` przez GitHub Actions + PyInstaller 6.22.2 + Python 3.12.10
+
+## Windows
+
+- Workflow GitHub Actions: `build-windows.yml`
+- Runner: `windows-latest`
+- Python: `3.12.10`
+- PyInstaller: `6.22.2`
+- Testy: `263 passed, 2 warnings` na etapie Windows CI
+- Artefakt: `Tlumacz-0.31.1-windows-x86_64.exe`, SHA-256: `ca0334bbee4eb8ddc0961e977fc8adff12dfd1a04c911dac421a6c6b718ccca3`
+- Bazowy EXE nie zawiera ciężkich opcjonalnych backendów `Transformers/Torch`, `OpenVINO` i `FastAPI`; są one celowo wykluczone z bundla Windows.
 
 ## Weryfikacja
 
