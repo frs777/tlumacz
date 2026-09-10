@@ -1,0 +1,64 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller
+
+      - name: Run test suite
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Build Windows executable
+        shell: bash
+        run: |
+          rm -rf build/pyinstaller dist
+          python -m PyInstaller --clean --noconfirm build/windows/tlumacz.spec
+          mkdir -p release
+          cp dist/Tlumacz.exe release/Tlumacz-0.31.1-windows-x86_64.exe
+
+      - name: Smoke-test executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "release/Tlumacz-0.31.1-windows-x86_64.exe")) {
+            throw "Windows executable was not produced"
+          }
+          $size = (Get-Item "release/Tlumacz-0.31.1-windows-x86_64.exe").Length
+          if ($size -lt 1000000) {
+            throw "Windows executable looks unexpectedly small: $size bytes"
+          }
+          Get-FileHash "release/Tlumacz-0.31.1-windows-x86_64.exe" -Algorithm SHA256
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tlumacz-windows-x86_64
+          path: release/Tlumacz-0.31.1-windows-x86_64.exe
+          if-no-files-found: error
+          retention-days: 30
