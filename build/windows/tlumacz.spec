@@ -4,7 +4,7 @@
 from PyInstaller.utils.hooks import collect_data_files
 
 
-project_root = "."
+project_root = "../.."
 
 resources = collect_data_files(
     "tlumacz.qt_gui.resources",
@@ -16,7 +16,7 @@ skills = collect_data_files(
 )
 
 analysis = Analysis(
-    ["tlumacz/qt_gui/app.py"],
+    ["../../tlumacz/qt_gui/app.py"],
     pathex=[project_root],
     binaries=[],
     datas=resources + skills,
@@ -50,5 +50,5 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon="build/windows/tlumacz.ico",
+    icon="tlumacz.ico",
 )
