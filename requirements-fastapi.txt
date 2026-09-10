@@ -1,0 +1,9 @@
+# Zależności dla backendu FastAPI + Transformers (TranslateGemma)
+# Instalacja: pip install -r requirements-fastapi.txt
+
+fastapi>=0.100.0
+uvicorn>=0.23.0
+transformers>=4.35.0
+torch>=2.0.0
+accelerate>=0.20.0
+safetensors>=0.4.0

@@ -1,0 +1,9 @@
+edb0a3f24a81dcd577afa2761e5032b58364e6dcf06081ed89fcdb7c32480cf5  packages/0.31.1/BUILD-REPORT.md
+7797d42ba7215f1314d20620ffc6a7c61d503989682cac9104ed7401506936c3  packages/0.31.1/PKGBUILD
+3eee63dbd99087c453a3de0aa37368edb909e2316bddb3b9f1a6f4b3c8a55867  packages/0.31.1/.SRCINFO
+de2321726ec30a9c3f2bb1814b28816a3d34fc3fc641e9b9272b96493666421e  packages/0.31.1/tlumacz_0.31.1-1_all.deb
+ba27613ab2d8b1f70a406ac4aa988cb194e183469ab710da9dfe5cc8fac6414d  packages/0.31.1/tlumacz-0.31.1-1-any.pkg.tar.zst
+7fc291af5fb8e0b48212ebdd0c076ecdb9aac36cd8341f9d81b47a32f92b264c  packages/0.31.1/tlumacz-0.31.1-1.noarch.rpm
+2ca1973063a96ca1b9ac8ab338a4eed63d866009d33cd95d5095fe991e34f373  packages/0.31.1/tlumacz-0.31.1-1.src.rpm
+3cfdcbf31e4fda16dab192bf9ebeb809aba013a5a6a8b6076c41b407df555606  packages/0.31.1/tlumacz-0.31.1-x86_64.AppImage
+00b78cfb5e7b64fbdcfaff65f8ab21d398b592a26f26756e529199afa4849817  packages/0.31.1/tlumacz-0.31.1-x86_64-linuxdeploy.AppImage

@@ -1,0 +1,366 @@
+"""Backend Manager for Tłumacz GUI.
+
+Zarządza wyborem backendu tłumaczenia (llama.cpp, Cloud, FastAPI).
+Deleguje żądania do odpowiedniego managera.
+Dziedziczy po QObject dla komunikacji z GUI przez sygnały Qt.
+
+Architektura:
+    BackendManager (QObject)
+    ├── ServerManager (QObject, llama.cpp) — wstrzykiwany z MainWindow
+    ├── FastAPIServerManager (Transformers) — tworzony wewnętrznie
+    └── Cloud API — bezpośredni URL z konfiguracji
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Optional
+
+from PySide6.QtCore import QObject, Signal
+
+from .worker import ServerManager
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Konfiguracja
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BackendConfig:
+    """Konfiguracja backendu tłumaczenia.
+
+    Atrybuty:
+        backend_type: Typ backendu — 'llama', 'cloud' lub 'fastapi'.
+        cloud_base_url: URL API cloud (np. Gemini, OpenAI).
+        cloud_api_key: Klucz API dla cloud.
+        cloud_model: Nazwa modelu cloud.
+        fastapi_model_path: Ścieżka do modelu lub nazwa z HuggingFace.
+        fastapi_host: Host serwera FastAPI.
+        fastapi_port: Port serwera FastAPI.
+        fastapi_device: Urządzenie — 'auto', 'cpu' lub 'cuda'.
+        fastapi_dtype: Typ danych — 'float16', 'bfloat16' lub 'float32'.
+    """
+
+    backend_type: str = "llama"
+
+    # Cloud API
+    cloud_base_url: str = ""
+    cloud_api_key: str = ""
+    cloud_model: str = ""
+
+    # FastAPI (TranslateGemma)
+    fastapi_model_path: str = "google/translategemma-4b-it"
+    fastapi_host: str = "127.0.0.1"
+    fastapi_port: int = 8001
+    fastapi_device: str = "auto"
+    fastapi_dtype: str = "float16"
+
+    # Walidacja
+    _VALID_BACKENDS = ("llama", "cloud", "fastapi")
+
+    def validate(self) -> None:
+        """Sprawdź poprawność konfiguracji.
+
+        Raises:
+            ValueError: Jeśli backend_type jest nieznany.
+        """
+        if self.backend_type not in self._VALID_BACKENDS:
+            raise ValueError(
+                f"Nieznany backend: {self.backend_type!r}. "
+                f"Dozwolone: {self._VALID_BACKENDS}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# BackendManager
+# ---------------------------------------------------------------------------
+
+class BackendManager(QObject):
+    """Zarządza wyborem backendu tłumaczenia.
+
+    Dziedziczy po QObject dla komunikacji z GUI przez sygnały Qt.
+    Wzorzec: wstrzyknięcie zależności — ServerManager jest dostarczany
+    z MainWindow (nie tworzony wewnętrznie), bo MainWindow zarządza
+    jego cyklem życia.
+
+    Sygnały:
+        backend_started(str): Emitowany po uruchomieniu backendu (base_url).
+        backend_stopped(): Emitowany po zatrzymaniu backendu.
+        backend_error(str): Emitowany przy błędzie (komunikat).
+        operation_finished(): Emitowany po zakończeniu operacji.
+    """
+
+    # Sygnały Qt dla GUI
+    backend_started = Signal(str)
+    backend_stopped = Signal()
+    backend_error = Signal(str)
+    operation_finished = Signal()
+
+    def __init__(self, config: Optional[BackendConfig] = None) -> None:
+        super().__init__()
+        self._config = config or BackendConfig()
+        self._config.validate()
+
+        self._server_manager: Optional[ServerManager] = None
+        self._fastapi_manager: Optional["FastAPIServerManager"] = None
+        self._last_error = ""
+
+        # Lazy import — unikamy cyklicznych importów
+        self._init_fastapi_manager()
+
+    # ------------------------------------------------------------------
+    # Inicjalizacja
+    # ------------------------------------------------------------------
+
+    def _init_fastapi_manager(self) -> None:
+        """Inicjalizuj FastAPIServerManager.
+
+        Lazy import żeby uniknąć problemów z zależnościami
+        (transformers/torch mogą nie być zainstalowane).
+        """
+        try:
+            from ..fastapi_manager import (
+                FastAPIServerManager,
+                FastAPIServerManagerConfig,
+            )
+            fastapi_config = FastAPIServerManagerConfig(
+                model_path=self._config.fastapi_model_path,
+                host=self._config.fastapi_host,
+                port=self._config.fastapi_port,
+                device=self._config.fastapi_device,
+                dtype=self._config.fastapi_dtype,
+            )
+            self._fastapi_manager = FastAPIServerManager(fastapi_config)
+        except ImportError:
+            logger.warning(
+                "FastAPIServerManager niedostępny — "
+                "brak zależności (transformers/torch). "
+                "Zainstaluj: pip install -r requirements-fastapi.txt"
+            )
+            self._fastapi_manager = None
+
+    def set_server_manager(self, server_manager: ServerManager) -> None:
+        """Ustaw ServerManager z MainWindow (wstrzyknięcie zależności).
+
+        Args:
+            server_manager: Istniejący ServerManager z MainWindow.
+        """
+        self._server_manager = server_manager
+        self._connect_server_signals()
+        logger.info("ServerManager wstrzyknięty do BackendManager")
+
+    def _connect_server_signals(self) -> None:
+        """Podłącz sygnały ServerManager do sygnałów BackendManager."""
+        if self._server_manager is None:
+            return
+        self._server_manager.server_started.connect(self.backend_started)
+        self._server_manager.server_stopped.connect(self.backend_stopped)
+        self._server_manager.server_error.connect(self._on_server_error)
+        self._server_manager.operation_finished.connect(self.operation_finished)
+
+    def _on_server_error(self, message: str) -> None:
+        """Obsługa błędu z ServerManager — zapamiętuje i propaguje."""
+        self._last_error = message
+        self.backend_error.emit(message)
+
+    # ------------------------------------------------------------------
+    # Właściwości
+    # ------------------------------------------------------------------
+
+    @property
+    def config(self) -> BackendConfig:
+        """Konfiguracja backendu."""
+        return self._config
+
+    # ------------------------------------------------------------------
+    # Zarządzanie backendem
+    # ------------------------------------------------------------------
+
+    def get_active_backend(self) -> str:
+        """Zwraca aktywny backend.
+
+        Returns:
+            'llama', 'cloud' lub 'fastapi'.
+        """
+        return self._config.backend_type
+
+    def set_active_backend(self, backend_type: str) -> None:
+        """Zmienia aktywny backend.
+
+        Zatrzymuje obecny backend jeśli działa, następnie przełącza
+        na nowy.
+
+        Args:
+            backend_type: 'llama', 'cloud' lub 'fastapi'.
+
+        Raises:
+            ValueError: Jeśli backend_type jest nieznany.
+        """
+        if backend_type not in BackendConfig._VALID_BACKENDS:
+            raise ValueError(
+                f"Nieznany backend: {backend_type!r}. "
+                f"Dozwolone: {BackendConfig._VALID_BACKENDS}"
+            )
+
+        # Zatrzymaj obecny backend jeśli działa
+        if self.is_running():
+            self.stop()
+
+        self._config.backend_type = backend_type
+        logger.info("Zmieniono backend na: %s", backend_type)
+
+    # ------------------------------------------------------------------
+    # Cykl życia
+    # ------------------------------------------------------------------
+
+    def start(self) -> None:
+        """Uruchamia aktywny backend.
+
+        Deleguje do odpowiedniego managera w zależności od backend_type.
+        Dla Cloud emituje backend_started natychmiast (nie wymaga startu).
+        """
+        backend = self.get_active_backend()
+        self._last_error = ""
+
+        if backend == "llama":
+            self._start_llama()
+        elif backend == "fastapi":
+            self._start_fastapi()
+        elif backend == "cloud":
+            self._start_cloud()
+
+    def _start_llama(self) -> None:
+        """Uruchom llama.cpp przez ServerManager."""
+        if self._server_manager is None:
+            self._last_error = "ServerManager nie jest ustawiony"
+            self.backend_error.emit(self._last_error)
+            return
+        self._server_manager.start()
+
+    def _start_fastapi(self) -> None:
+        """Uruchom FastAPI przez FastAPIServerManager."""
+        if self._fastapi_manager is None:
+            self._last_error = (
+                "FastAPIServerManager niedostępny. "
+                "Zainstaluj zależności: pip install -r requirements-fastapi.txt"
+            )
+            self.backend_error.emit(self._last_error)
+            return
+
+        try:
+            success = self._fastapi_manager.start()
+            if success:
+                self.backend_started.emit(self._fastapi_manager.base_url)
+            else:
+                self._last_error = self._fastapi_manager.get_last_error()
+                self.backend_error.emit(self._last_error)
+        except Exception as exc:
+            self._last_error = f"Błąd uruchamiania FastAPI: {exc}"
+            self.backend_error.emit(self._last_error)
+
+    def _start_cloud(self) -> None:
+        """Cloud nie wymaga startowania — emituj sygnał natychmiast."""
+        if not self._config.cloud_base_url:
+            self._last_error = "Brak cloud_base_url w konfiguracji"
+            self.backend_error.emit(self._last_error)
+            return
+        self.backend_started.emit(self._config.cloud_base_url)
+
+    def stop(self) -> None:
+        """Zatrzymuje aktywny backend."""
+        backend = self.get_active_backend()
+
+        if backend == "llama":
+            if self._server_manager is not None:
+                self._server_manager.stop()
+        elif backend == "fastapi":
+            if self._fastapi_manager is not None:
+                self._fastapi_manager.stop()
+                self.backend_stopped.emit()
+        # Cloud nie wymaga zatrzymywania
+
+    def restart(self) -> None:
+        """Restartuje aktywny backend."""
+        backend = self.get_active_backend()
+
+        if backend == "cloud":
+            return  # Cloud nie wymaga restartu
+
+        self.stop()
+        self.start()
+
+    # ------------------------------------------------------------------
+    # Stan
+    # ------------------------------------------------------------------
+
+    def is_running(self) -> bool:
+        """Sprawdza czy aktywny backend działa.
+
+        Returns:
+            True jeśli backend jest uruchomiony.
+        """
+        backend = self.get_active_backend()
+
+        if backend == "llama":
+            return (
+                self._server_manager is not None
+                and self._server_manager.is_running
+            )
+        elif backend == "fastapi":
+            return (
+                self._fastapi_manager is not None
+                and self._fastapi_manager.is_running
+            )
+        elif backend == "cloud":
+            return True  # Cloud zawsze "działa"
+
+        return False
+
+    def get_base_url(self) -> str:
+        """Zwraca URL API aktywnego backendu.
+
+        Returns:
+            URL endpointu API lub pusty string.
+        """
+        backend = self.get_active_backend()
+
+        if backend == "llama":
+            # ServerManager nie ma base_url — odczytujemy przez server.config
+            if (
+                self._server_manager is not None
+                and self._server_manager.server is not None
+            ):
+                return self._server_manager.server.config.base_url
+            # Fallback: odczytaj z konfiguracji jeśli serwer nie jest jeszcze utworzony
+            if (
+                self._server_manager is not None
+                and self._server_manager._config is not None
+            ):
+                return self._server_manager._config.base_url
+            return ""
+        elif backend == "fastapi":
+            if self._fastapi_manager is not None:
+                return self._fastapi_manager.base_url
+            return ""
+        elif backend == "cloud":
+            return self._config.cloud_base_url
+
+        return ""
+
+    def get_last_error(self) -> str:
+        """Zwraca ostatni błąd aktywnego backendu.
+
+        Returns:
+            Komunikat błędu lub pusty string.
+        """
+        backend = self.get_active_backend()
+
+        if backend == "fastapi":
+            if self._fastapi_manager is not None:
+                return self._fastapi_manager.get_last_error()
+
+        # Dla llama i cloud — zwracamy zapamiętany błąd z _on_server_error
+        return self._last_error

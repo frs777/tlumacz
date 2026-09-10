@@ -1,0 +1,7 @@
+# Zależności dla backendu OpenVINO (TranslateGemma INT8)
+# Instalacja: pip install -r requirements-openvino.txt
+#
+# Wymaga Python 3.10+ (OpenVINO 2026.3+ obsługuje Python 3.14)
+
+openvino>=2024.6.0
+openvino-genai>=2024.6.0

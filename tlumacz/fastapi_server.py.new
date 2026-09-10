@@ -1,0 +1,352 @@
+"""Serwer FastAPI dla TranslateGemma z obsługą PyTorch i OpenVINO.
+
+Ten moduł implementuje serwer HTTP z OpenAI-compatible API który obsługuje
+specjalny format TranslateGemma z kodami języków (source_lang_code, target_lang_code).
+
+Automatycznie wykrywa format modelu:
+- PyTorch (safetensors) → używa transformers + torch
+- OpenVINO (xml+bin) → używa openvino.runtime
+
+Wymaga zainstalowanych zależności:
+    pip install fastapi uvicorn transformers torch accelerate
+    # Opcjonalnie dla OpenVINO:
+    pip install openvino openvino-tokenizers
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FastAPIServerConfig:
+    """Konfiguracja serwera FastAPI."""
+
+    model_path: str = "google/translategemma-4b-it"
+    host: str = "127.0.0.1"
+    port: int = 8001
+    device: str = "auto"  # "auto", "cpu", "cuda"
+    dtype: str = "float16"  # "float16", "bfloat16", "float32"
+
+
+class ContentItem(BaseModel):
+    """Element zawartości wiadomości."""
+
+    type: str  # "text" lub "image"
+    source_lang_code: Optional[str] = None
+    target_lang_code: Optional[str] = None
+    text: Optional[str] = None
+    url: Optional[str] = None
+    image: Optional[str] = None
+
+
+class Message(BaseModel):
+    """Wiadomość w formacie OpenAI."""
+
+    role: str  # "user" lub "assistant"
+    content: str | list[ContentItem]
+
+
+class ChatCompletionRequest(BaseModel):
+    """Żądanie chat completions."""
+
+    model: str
+    messages: list[Message]
+    temperature: Optional[float] = 0.1
+    max_tokens: Optional[int] = 200
+    stream: Optional[bool] = False
+
+
+class ChatCompletionChoice(BaseModel):
+    """Wybór w odpowiedzi."""
+
+    index: int
+    message: Message
+    finish_reason: str = "stop"
+
+
+class ChatCompletionResponse(BaseModel):
+    """Odpowiedź chat completions."""
+
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: list[ChatCompletionChoice]
+
+
+class TranslateGemmaServer:
+    """Serwer TranslateGemma z obsługą PyTorch i OpenVINO."""
+
+    def __init__(self, config: FastAPIServerConfig) -> None:
+        self.config = config
+        self.app = FastAPI(title="TranslateGemma Server")
+        self.processor = None
+        self.model = None
+        self._server: Optional[uvicorn.Server] = None
+        self._thread: Optional[threading.Thread] = None
+        self._is_openvino = False  # Flaga: czy używamy OpenVINO
+        
+        self._setup_routes()
+        self.load_model()
+
+    def _setup_routes(self) -> None:
+        """Konfiguruj route API."""
+        
+        @self.app.get("/health")
+        def health():
+            return {"status": "ok", "model": self.config.model_path}
+
+        @self.app.post("/v1/chat/completions")
+        def chat_completions(request: ChatCompletionRequest):
+            try:
+                messages = self._normalize_messages(request.messages)
+                result = self._generate(messages, request.max_tokens, request.temperature)
+                
+                return ChatCompletionResponse(
+                    id=f"chatcmpl-{int(time.time())}",
+                    created=int(time.time()),
+                    model=request.model,
+                    choices=[
+                        ChatCompletionChoice(
+                            index=0,
+                            message=Message(role="assistant", content=result),
+                            finish_reason="stop",
+                        )
+                    ],
+                )
+            except Exception as e:
+                logger.error(f"Error in chat completions: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+    def _normalize_messages(self, messages: list[Message]) -> list[dict]:
+        """Normalizuj wiadomości do formatu Transformers."""
+        normalized = []
+        for msg in messages:
+            if isinstance(msg.content, str):
+                normalized.append({
+                    "role": msg.role,
+                    "content": [{"type": "text", "text": msg.content}]
+                })
+            else:
+                content_list = []
+                for item in msg.content:
+                    if isinstance(item, dict):
+                        item_type = item.get("type", "text")
+                        item_text = item.get("text", "")
+                        item_source = item.get("source_lang_code")
+                        item_target = item.get("target_lang_code")
+                    else:
+                        item_type = item.type
+                        item_text = item.text or ""
+                        item_source = item.source_lang_code
+                        item_target = item.target_lang_code
+                    
+                    content_item = {"type": item_type}
+                    if item_type == "text":
+                        content_item["text"] = item_text
+                        if item_source:
+                            content_item["source_lang_code"] = item_source
+                        if item_target:
+                            content_item["target_lang_code"] = item_target
+                    content_list.append(content_item)
+                
+                normalized.append({
+                    "role": msg.role,
+                    "content": content_list
+                })
+        
+        return normalized
+
+    def _generate(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        """Generuj tłumaczenie."""
+        # Obsługa "auto" jako source_lang_code
+        for msg in messages:
+            if isinstance(msg.get("content"), list):
+                for item in msg["content"]:
+                    if isinstance(item, dict) and item.get("source_lang_code") == "auto":
+                        text = item.get("text", "")
+                        if any(c in text for c in "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ"):
+                            item["source_lang_code"] = "pl"
+                        else:
+                            item["source_lang_code"] = "en"
+        
+        if self._is_openvino:
+            return self._generate_openvino(messages, max_tokens, temperature)
+        else:
+            return self._generate_pytorch(messages, max_tokens, temperature)
+
+    def _generate_pytorch(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        """Generuj używając PyTorch."""
+        import torch
+        
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        inputs = {k: v.to(self.model.device) if hasattr(v, 'to') else v for k, v in inputs.items()}
+        
+        input_len = len(inputs["input_ids"][0])
+        
+        with torch.inference_mode():
+            generation = self.model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else 1.0,
+            )
+        
+        generation = generation[0][input_len:]
+        decoded = self.processor.decode(generation, skip_special_tokens=True)
+        return decoded
+
+    def _generate_openvino(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        """Generuj używając OpenVINO."""
+        # OpenVINO używa OVMS lub bezpośredniego API
+        # TODO: Implementacja OpenVINO
+        raise NotImplementedError("OpenVINO generation not yet implemented")
+
+    def _get_dtype(self):
+        """Pobierz typ danych torch."""
+        import torch
+        
+        use_cpu = (self.config.device == "cpu") or \
+                  (self.config.device == "auto" and not torch.cuda.is_available())
+        
+        if use_cpu:
+            return torch.float32
+        
+        dtype_map = {
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32,
+        }
+        return dtype_map.get(self.config.dtype, torch.float16)
+
+    def load_model(self) -> None:
+        """Załaduj model (PyTorch lub OpenVINO)."""
+        model_path = Path(self.config.model_path)
+        
+        # Sprawdź czy to model OpenVINO
+        if (model_path / "openvino_language_model.xml").exists():
+            logger.info("Detected OpenVINO model format")
+            self._load_openvino_model()
+        else:
+            logger.info("Detected PyTorch model format")
+            self._load_pytorch_model()
+
+    def _load_pytorch_model(self) -> None:
+        """Załaduj model PyTorch."""
+        from transformers import AutoProcessor, AutoModelForImageTextToText
+        
+        logger.info(f"Loading PyTorch model from {self.config.model_path}")
+        
+        hf_token = os.environ.get("HF_TOKEN")
+        
+        self.processor = AutoProcessor.from_pretrained(
+            self.config.model_path,
+            token=hf_token,
+        )
+        
+        device_map = self.config.device
+        if device_map == "auto":
+            import torch
+            if not torch.cuda.is_available():
+                device_map = "cpu"
+                logger.info("CUDA not available, using CPU")
+        
+        model_kwargs = {"torch_dtype": self._get_dtype()}
+        
+        self.model = AutoModelForImageTextToText.from_pretrained(
+            self.config.model_path,
+            device_map=device_map,
+            token=hf_token,
+            **model_kwargs,
+        )
+        
+        self._is_openvino = False
+        logger.info(f"PyTorch model loaded on {self.model.device}")
+
+    def _load_openvino_model(self) -> None:
+        """Załaduj model OpenVINO."""
+        # TODO: Implementacja ładowania OpenVINO
+        raise NotImplementedError("OpenVINO model loading not yet implemented")
+
+    def start(self) -> None:
+        """Uruchom serwer."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+        
+        config = uvicorn.Config(
+            self.app,
+            host=self.config.host,
+            port=self.config.port,
+            log_level="info",
+        )
+        self._server = uvicorn.Server(config)
+        self._thread = threading.Thread(target=self._server.run, daemon=True)
+        self._thread.start()
+        logger.info(f"Server started on http://{self.config.host}:{self.config.port}")
+
+    def stop(self) -> None:
+        """Zatrzymaj serwer."""
+        if self._server is not None:
+            self._server.should_exit = True
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        self._server = None
+        self._thread = None
+        logger.info("Server stopped")
+
+    def is_running(self) -> bool:
+        """Sprawdź czy serwer działa."""
+        return self._thread is not None and self._thread.is_alive()
+
+
+def create_server(config: Optional[FastAPIServerConfig] = None) -> TranslateGemmaServer:
+    """Utwórz serwer TranslateGemma."""
+    if config is None:
+        config = FastAPIServerConfig()
+    return TranslateGemmaServer(config)
+
+
+if __name__ == "__main__":
+    import sys
+    
+    model_path = sys.argv[1] if len(sys.argv) > 1 else "google/translategemma-4b-it"
+    host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+    port = int(sys.argv[3]) if len(sys.argv) > 3 else 8001
+    
+    config = FastAPIServerConfig(
+        model_path=model_path,
+        host=host,
+        port=port,
+    )
+    
+    server = create_server(config)
+    server.start()
+    
+    logger.info(f"Server running on http://{host}:{port}")
+    logger.info("Press Ctrl+C to stop")
+    
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        server.stop()
