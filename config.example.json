@@ -1,0 +1,43 @@
+{
+  "base_url": "http://127.0.0.1:18080/v1",
+  "api_key": "ollama",
+  "model": "LOCAL",
+  "chunk_size": 4000,
+  "temperature": 0.1,
+  "target_language": "wykryj do pl",
+  "theme": "system",
+  "glossary_path": "",
+  "system_prompt": "",
+  "enabled_skills": [],
+  "skip_line_patterns": [
+    "^\\s*---\\s*$",
+    "^\\s*(name|license|author|metadata|version|tags|created|updated)\\s*:"
+  ],
+  "server_port": 18080,
+  "server_gguf_path": "/ścieżka/do/model.gguf",
+  "server_chat_template": "",
+  "server_parallel": 1,
+  "server_compute_mode": "gpu",
+  "auto_start_server": false,
+  "cache_clear_after_translation": true,
+  "restart_after_translation": false,
+  "model_profiles": {},
+  "cloud_models": [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
+  ],
+  "last_local_base_url": "http://127.0.0.1:17580/v1",
+  "last_local_api_key": "ollama",
+  "last_local_model": "local",
+  "backend_type": "llama",
+  "fastapi_model_path": "google/translategemma-4b-it",
+  "fastapi_host": "127.0.0.1",
+  "fastapi_port": 8001,
+  "fastapi_device": "auto",
+  "fastapi_dtype": "float16",
+  "fastapi_parallel": 1,
+  "openvino_model_path": "/ścieżka/do/openvino/translategemma-4b-it-int8-ov",
+  "openvino_device": "CPU",
+  "last_input": "",
+  "last_output": ""
+}

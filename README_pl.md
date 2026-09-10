@@ -240,24 +240,16 @@ W zakładce **Pomoc** dostępny jest przycisk **O programie**, który pokazuje n
 
 ### Plik konfiguracyjny
 
-Ustawienia w `~/.config/tlumacz/config.json`:
+Ustawienia w `~/.config/tlumacz/config.json` obejmują backend, połączenie API, parametry tłumaczenia, serwery FastAPI/OpenVINO, profile modeli oraz zapamiętane ścieżki. Pełny, bezpieczny przykład wszystkich pól znajduje się w [`config.example.json`](config.example.json).
 
-```json
-{
-  "backend_type": "llama",
-  "base_url": "http://127.0.0.1:18080/v1",
-  "api_key": "ollama",
-  "model": "LOCAL",
-  "chunk_size": 4000,
-  "temperature": 0.1,
-  "target_language": "wykryj do pl",
-  "server_port": 18080,
-  "server_gguf_path": "/ścieżka/do/model.gguf",
-  "server_chat_template": "",
-  "auto_start_server": false,
-  "cache_clear_after_translation": true
-}
+Aby zacząć od przykładowej konfiguracji:
+
+```bash
+mkdir -p ~/.config/tlumacz
+cp config.example.json ~/.config/tlumacz/config.json
 ```
+
+**Uwaga:** nie kopiuj do repozytorium swojego rzeczywistego `~/.config/tlumacz/config.json`, ponieważ może zawierać klucze API i lokalne ścieżki. Plik `config.example.json` zawiera wyłącznie wartości przykładowe.
 
 **Pola backendu:**
 - `backend_type`: `"llama"` (domyślny), `"cloud"`, `"fastapi"` lub `"openvino"`

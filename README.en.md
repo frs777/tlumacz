@@ -230,23 +230,16 @@ The **Help** tab contains an **About** button showing the application name, vers
 
 ### Configuration File
 
-Settings in `~/.config/tlumacz/config.json`:
+Settings in `~/.config/tlumacz/config.json` cover the backend, API connection, translation parameters, FastAPI/OpenVINO servers, model profiles, and remembered paths. A complete, safe example of all fields is available in [`config.example.json`](config.example.json).
 
-```json
-{
-  "base_url": "http://127.0.0.1:18080/v1",
-  "api_key": "ollama",
-  "model": "LOCAL",
-  "chunk_size": 4000,
-  "temperature": 0.1,
-  "target_language": "wykryj do pl",
-  "server_port": 18080,
-  "server_gguf_path": "/path/to/model.gguf",
-  "server_chat_template": "",
-  "auto_start_server": false,
-  "cache_clear_after_translation": true
-}
+To start from the example configuration:
+
+```bash
+mkdir -p ~/.config/tlumacz
+cp config.example.json ~/.config/tlumacz/config.json
 ```
+
+**Note:** do not commit your real `~/.config/tlumacz/config.json` to the repository because it may contain API keys and local paths. The `config.example.json` file contains example values only.
 
 ### Parameters Table
 

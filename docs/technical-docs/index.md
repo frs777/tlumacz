@@ -1,7 +1,7 @@
 # Tłumacz — Dokumentacja Techniczna
 
-**Wersja:** 0.21.2
-**Data ostatniej aktualizacji:** 2026-09-06
+**Wersja:** 0.31.1
+**Data ostatniej aktualizacji:** 2026-09-10
 **Status:** Wersja robocza/testowa
 
 ---
@@ -148,37 +148,13 @@ docs/
 
 ## Konfiguracja
 
-Ustawienia w `~/.config/tlumacz/config.json`:
+Ustawienia są zapisywane w `~/.config/tlumacz/config.json`. Aktualny schemat odpowiada klasie `AppSettings` w `tlumacz/qt_gui/config.py` i obejmuje 35 pól, w tym konfigurację llama.cpp, chmury, FastAPI/TranslateGemma oraz OpenVINO.
 
-```json
-{
-  "backend_type": "llama",
-  "base_url": "http://127.0.0.1:8080/v1",
-  "api_key": "ollama",
-  "model": "LOCAL",
-  "chunk_size": 4000,
-  "temperature": 0.1,
-  "target_language": "wykryj do pl",
-  "theme": "system",
-  "glossary_path": "",
-  "system_prompt": "",
-  "enabled_skills": [],
-  "skip_line_patterns": [],
-  "server_port": 18080,
-  "server_gguf_path": "/ścieżka/do/model.gguf",
-  "server_chat_template": "",
-  "server_parallel": 1,
-  "server_compute_mode": "gpu",
-  "auto_start_server": false,
-  "cache_clear_after_translation": true,
-  "model_profiles": {},
-  "cloud_models": ["gemini-3.5-flash", "gemini-3.5-flash-lite"],
-  "last_local_base_url": "http://127.0.0.1:18080/v1",
-  "last_local_api_key": "ollama",
-  "last_local_model": "local",
-  "last_input": "",
-  "last_output": ""
-}
+Pełny przykład bez danych użytkownika znajduje się w [`config.example.json`](../../config.example.json). Nie należy publikować rzeczywistego pliku użytkownika, ponieważ `api_key` może zawierać sekret, a ścieżki mogą ujawniać lokalną strukturę systemu.
+
+```bash
+mkdir -p ~/.config/tlumacz
+cp config.example.json ~/.config/tlumacz/config.json
 ```
 
 ### Kluczowe pola
